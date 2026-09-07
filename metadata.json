@@ -1,0 +1,6 @@
+{
+  "name": "Code Flow SMS",
+  "description": "Code Flow SMS - Premium Virtual Number & Global SMS Verification Gateway. Get instant OTP receiving, active virtual numbers, real-time analytics, and high-speed developer API integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

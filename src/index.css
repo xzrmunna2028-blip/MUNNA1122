@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@keyframes rainbowShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.rainbow-animated-border {
+  background: linear-gradient(90deg, #ff0055, #ff7700, #ffee00, #00ff66, #00d4ff, #7928ca, #ff0055);
+  background-size: 300% 300%;
+  animation: rainbowShift 3.5s ease infinite;
+}
+
