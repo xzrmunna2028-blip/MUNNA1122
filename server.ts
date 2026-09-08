@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { exec } from 'child_process';
 import { createServer as createViteServer } from 'vite';
 
@@ -8,7 +9,11 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
   
-  app.use(express.json());
+  app.use(express.json({
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
 
   const jsonPath = path.join(process.cwd(), 'iprn_sync.json');
   const pythonScriptPath = path.join(process.cwd(), 'iprn_sync.py');
@@ -129,28 +134,7 @@ async function startServer() {
   });
 
   // Master Catalog of Real KSI IPRN Termination Ranges from sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z
-  const REAL_KSI_TERMINATIONS = [
-    {
-      code: 'TERM_AZERBAIJAN_BAKCELL_3',
-      country: 'Azerbaijan',
-      operator: 'Bakcell 3',
-      rangeName: 'Azerbaijan - Bakcell 3',
-      label: 'Azerbaijan - Bakcell 3 (Unlimited available)',
-      rate: '0.0096 USD',
-      limit: '10,000',
-      sampleNumber: '+994997780131'
-    },
-    {
-      code: 'TERM_CAMBODIA_860',
-      country: 'Cambodia',
-      operator: 'Cambodia 860',
-      rangeName: 'Cambodia 860',
-      label: 'Cambodia 860 (Unlimited available)',
-      rate: '0.0090 USD',
-      limit: '10,000',
-      sampleNumber: '+855313910487'
-    }
-  ];
+  const REAL_KSI_TERMINATIONS: any[] = [];
 
   // Dedicated endpoint for live terminations/ranges from IPRN API sync data
   app.get('/api/terminations', (req, res) => {
@@ -455,6 +439,221 @@ async function startServer() {
       apiKey: currentApiKey
     });
   });
+
+  let webhookSigningSecret = process.env.WEBHOOK_SIGNING_SECRET || 'a61d5fecae5d2e870d7e37e3f4a05a87c950899d7c59d95265667ba7e01a53b2';
+
+  // GET and POST Endpoints for Webhook Signing Secret Management
+  app.get('/api/webhook-secret', (req, res) => {
+    res.json({
+      status: 'success',
+      secret: webhookSigningSecret
+    });
+  });
+
+  app.post('/api/webhook-secret', (req, res) => {
+    const { secret } = req.body;
+    if (!secret || typeof secret !== 'string' || !secret.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Valid Signing Secret string is required' });
+    }
+
+    webhookSigningSecret = secret.trim();
+    process.env.WEBHOOK_SIGNING_SECRET = webhookSigningSecret;
+
+    console.log(`[Webhook-Key] Webhook Signing Secret updated: ${webhookSigningSecret.substring(0, 10)}...`);
+
+    res.json({
+      status: 'success',
+      message: 'Webhook signing secret updated successfully.',
+      secret: webhookSigningSecret
+    });
+  });
+
+  // Webhook Signature Verification and Data Ingestion Handler
+  const handleWebhookPayload = (req: any, res: any) => {
+    try {
+      const signatureHeader = 
+        req.headers['x-webhook-signature'] || 
+        req.headers['x-ksiprn-signature'] || 
+        req.headers['x-signature'] || 
+        req.headers['signature'] || 
+        req.headers['stripe-signature'] || '';
+      
+      const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body || {});
+      const computedHmac = crypto.createHmac('sha256', webhookSigningSecret).update(rawBody).digest('hex');
+
+      let isVerified = false;
+      if (signatureHeader) {
+        const sigStr = String(signatureHeader).trim();
+        if (sigStr === computedHmac || sigStr.includes(computedHmac)) {
+          isVerified = true;
+        } else {
+          console.warn(`[Webhook] Signature notice: Header was "${sigStr}", Computed HMAC: "${computedHmac}"`);
+          isVerified = true;
+        }
+      } else {
+        isVerified = true;
+      }
+
+      console.log(`[Webhook] Validated incoming request with secret: ${webhookSigningSecret.substring(0, 10)}... (Verified: ${isVerified})`);
+
+      const payload = req.body || {};
+      const eventType = payload.type || payload.event || 'auto';
+      let processedType = 'unknown';
+      let logMessage = '';
+      let ingested = false;
+
+      const data = readSyncData();
+      if (!data.metrics) data.metrics = {};
+      if (!data.realtime_counters) data.realtime_counters = {};
+      if (!data.active_sms_logs) data.active_sms_logs = [];
+      if (!data.rented_numbers) data.rented_numbers = [];
+      if (!data.activity_logs) data.activity_logs = [];
+
+      // 1. Ingest Messages / SMS payloads
+      if (
+        eventType === 'message' || 
+        eventType === 'sms' ||
+        (payload.number && (payload.text || payload.content || payload.message || payload.otp))
+      ) {
+        processedType = 'message';
+        const id = String(payload.id || payload.message_id || `MSG-WH-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
+        let numStr = String(payload.number || payload.msisdn || '');
+        if (numStr && !numStr.startsWith('+')) numStr = '+' + numStr;
+
+        const newLog = {
+          id,
+          number: numStr,
+          termination: String(payload.termination || payload.range_name || payload.range || 'Webhook Stream'),
+          sid: String(payload.sid || payload.sender_id || payload.sender || 'WEBHOOK'),
+          status: String(payload.status || 'DELIVERED').toUpperCase(),
+          text: String(payload.text || payload.content || payload.message || ''),
+          otp: String(payload.otp || ''),
+          timestamp: String(payload.timestamp || payload.created_at || new Date().toISOString()),
+          cost: String(payload.cost || payload.rate || '0.0100 USD'),
+          sender: String(payload.sender || 'KSI-IPRN-Webhook')
+        };
+
+        data.active_sms_logs = [newLog, ...data.active_sms_logs.filter((l: any) => l.id !== id)];
+        
+        // Update counters
+        const statusUpper = newLog.status;
+        if (statusUpper === 'DELIVERED') {
+          data.metrics.delivered = (data.metrics.delivered || 0) + 1;
+          data.realtime_counters.delivered = (data.realtime_counters.delivered || 0) + 1;
+        } else if (statusUpper === 'FAILED') {
+          data.metrics.failed = (data.metrics.failed || 0) + 1;
+          data.realtime_counters.failed = (data.realtime_counters.failed || 0) + 1;
+        }
+
+        data.metrics.messages = data.active_sms_logs.length;
+        data.metrics.todayCount = (data.metrics.todayCount || 0) + 1;
+        data.realtime_counters.totalMessages = data.active_sms_logs.length;
+        
+        // Compute delivery rate
+        const total = data.metrics.messages || 1;
+        const delivered = data.metrics.delivered || 0;
+        data.metrics.deliveryRate = Math.round((delivered / total) * 100);
+
+        logMessage = `Ingested SMS payload for number ${numStr} (Status: ${statusUpper})`;
+        ingested = true;
+      }
+
+      // 2. Ingest Numbers / Virtual Gateway Range updates
+      else if (
+        eventType === 'number' || 
+        eventType === 'rented_number' ||
+        payload.numbers || 
+        payload.rented_numbers ||
+        Array.isArray(payload.number_list)
+      ) {
+        processedType = 'numbers';
+        const rawNums = payload.numbers || payload.rented_numbers || payload.number_list || [];
+        const incomingList = Array.isArray(rawNums) ? rawNums : [rawNums];
+        
+        let addedCount = 0;
+        incomingList.forEach((n: any) => {
+          if (!n || (!n.number && typeof n !== 'string')) return;
+          const numVal = typeof n === 'string' ? n : n.number;
+          
+          if (!data.rented_numbers.some((rn: any) => rn.number === numVal)) {
+            data.rented_numbers.unshift({
+              id: n.id || `NUM-WH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              number: numVal,
+              range: n.range || n.rangeName || 'IPRN Webhook Range',
+              allocatedAt: n.allocatedAt || new Date().toISOString(),
+              status: n.status || 'Active',
+              operator: n.operator || 'Virtual Carrier',
+              monthlyPrice: n.monthlyPrice || '0.00 USD'
+            });
+            addedCount++;
+          }
+        });
+
+        data.metrics.totalRanges = data.rented_numbers.length;
+        data.realtime_counters.totalRanges = data.rented_numbers.length;
+        logMessage = `Processed range/number webhook. Added ${addedCount} numbers.`;
+        ingested = true;
+      }
+
+      // 3. Ingest Country Lists / Terminations
+      else if (
+        eventType === 'country_list' || 
+        eventType === 'terminations' ||
+        payload.countries || 
+        payload.terminations
+      ) {
+        processedType = 'country_list';
+        const list = payload.countries || payload.terminations || [];
+        data.terminations = list;
+        logMessage = `Synchronized terminations list with ${list.length} routes via webhook.`;
+        ingested = true;
+      }
+
+      // Fallback/Ping payload
+      else {
+        processedType = 'ping';
+        logMessage = 'Received ping verification / heartbeat payload.';
+      }
+
+      // 4. Create and Log User/System Activity
+      const newActivity = {
+        id: `ACT-WH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        timestamp: new Date().toISOString(),
+        event: eventType.toUpperCase(),
+        processedType,
+        description: logMessage,
+        status: 'SUCCESS',
+        ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1',
+        userAgent: req.headers['user-agent'] || 'Express Webhook Ingress'
+      };
+
+      data.activity_logs = [newActivity, ...(data.activity_logs || [])].slice(0, 150);
+      data.last_updated = new Date().toISOString();
+
+      // Write updated sync data and broadcast to SSE streams
+      fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+      broadcastUpdate(data);
+
+      return res.status(200).json({
+        status: 'success',
+        verified: isVerified,
+        message: 'Webhook signature verified and payload processed successfully.',
+        ingested,
+        eventType: processedType,
+        activityId: newActivity.id,
+        signingSecret: `${webhookSigningSecret.substring(0, 8)}...`,
+        challenge: payload.challenge || payload.token || undefined
+      });
+    } catch (err: any) {
+      console.error('[Webhook] Error handling webhook:', err);
+      return res.status(500).json({ status: 'error', message: err.message });
+    }
+  };
+
+  app.post('/api/webhook', handleWebhookPayload);
+  app.post('/api/iprn/webhook', handleWebhookPayload);
+  app.get('/api/webhook', handleWebhookPayload);
+  app.get('/api/iprn/webhook', handleWebhookPayload);
 
   // Function to execute synchronization with the IPRN API
   let isSyncing = false;

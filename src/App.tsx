@@ -232,9 +232,9 @@ export default function App() {
     }
   }, [darkMode]);
   
-  // Authentication State
+  // Authentication State - secure real-time authentication lock
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('codeflow_logged_in') !== 'false';
+    return localStorage.getItem('codeflow_logged_in') === 'true';
   });
 
   const handleLogout = () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -20,6 +20,8 @@ import {
   Copy,
   Check,
   Headphones,
+  Radio,
+  Zap,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -55,6 +57,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [copiedApiKey, setCopiedApiKey] = useState<boolean>(false);
   const [copiedAccountCode, setCopiedAccountCode] = useState<boolean>(false);
+
+  // Real-time Sidebar Live Stream Widget state
+  const [latestSms, setLatestSms] = useState<any | null>(null);
+  const [liveMsgCount, setLiveMsgCount] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchLatest = async () => {
+      try {
+        const res = await fetch('/api/active-sms');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+            setLatestSms(data.logs[0]);
+            setLiveMsgCount(data.logs.length);
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchLatest();
+    const interval = setInterval(fetchLatest, 2500);
+
+    const handleSmsUpdated = () => {
+      fetchLatest();
+    };
+
+    window.addEventListener('real_sms_updated', handleSmsUpdated);
+    window.addEventListener('real_sms_updated_event', handleSmsUpdated);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('real_sms_updated', handleSmsUpdated);
+      window.removeEventListener('real_sms_updated_event', handleSmsUpdated);
+    };
+  }, []);
 
   const accountCode = '8492019384'; // 10-digit Active Account Code
   const apiKey = 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z'; // Live IPRN Production API Key
@@ -258,30 +294,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Sidebar Footer with Quick Links */}
         <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/80 space-y-2.5">
-          {/* IPRN Live API Key Status Card */}
-          <div className="p-3 rounded-xl bg-slate-900/90 border border-sky-500/30 text-xs">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="flex items-center gap-1.5 text-[11px] font-bold text-sky-400">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                IPRN API Live
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">Auto-Sync</span>
-            </div>
-            <div className="flex items-center justify-between gap-1 text-[11px] font-mono text-slate-300 bg-slate-950/70 px-2 py-1 rounded-lg border border-slate-800">
-              <span className="truncate">sk_live_...dz2Z</span>
-              <button
-                onClick={handleCopyKey}
-                title="Copy IPRN Live API Key"
-                className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
-              >
-                {copiedApiKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
           {/* Telegram Action */}
           <a
             href="https://t.me/super_x_sms_s"

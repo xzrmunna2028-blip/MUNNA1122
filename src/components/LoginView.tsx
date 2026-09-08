@@ -10,10 +10,10 @@ import {
   CheckCircle2,
   X,
   KeyRound,
-  Bot,
-  Sparkles,
+  UserPlus,
+  Mail,
 } from 'lucide-react';
-import { ActivationChatBot, RegisteredUser } from './ActivationChatBot';
+import { RegisteredUser } from './ActivationChatBot';
 
 interface LoginViewProps {
   onLoginSuccess: (username: string) => void;
@@ -21,11 +21,20 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [identifier, setIdentifier] = useState('xzrmunna7788@gmail.com');
-  const [password, setPassword] = useState('MUNNA11');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   
+  // Login fields - strictly empty by default (no auto-fill/pre-saved credentials)
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // Register fields
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -36,9 +45,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
-  // Account Activation Chatbot state
-  const [showActivationBot, setShowActivationBot] = useState(false);
-
+  // Sign In submit handler
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -52,7 +59,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       return;
     }
     if (!inputPass) {
-      setErrorMessage('Please enter your password');
+      setErrorMessage('Please enter your Password');
       return;
     }
 
@@ -75,7 +82,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // 2. Check dynamically registered & admin-approved users from Chatbot
+      // 2. Check dynamically registered users from localStorage
       const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
       const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
       
@@ -90,15 +97,92 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // Invalid login
+      // Invalid login credentials
       setIsLoading(false);
-      setErrorMessage('Invalid Email/Username or Password! If you are a new user, click "Account Active" below to activate.');
+      setErrorMessage('Invalid Username/Email or Password! If you don\'t have an account, click "Create Account" below.');
     }, 600);
+  };
+
+  // Sign Up / Registration submit handler
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const name = regName.trim();
+    const email = regEmail.trim();
+    const pass = regPassword;
+    const confirmPass = regConfirmPassword;
+
+    if (!name) {
+      setErrorMessage('Please enter your Full Name');
+      return;
+    }
+    if (!email) {
+      setErrorMessage('Please enter your Email Address');
+      return;
+    }
+    if (pass.length < 5) {
+      setErrorMessage('Password must be at least 5 characters long');
+      return;
+    }
+    if (pass !== confirmPass) {
+      setErrorMessage('Passwords do not match');
+      return;
+    }
+
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
+      const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
+
+      // Check if email already exists
+      const isDuplicate = registeredUsers.some(
+        (u) => u.email.toLowerCase() === email.toLowerCase()
+      );
+
+      if (isDuplicate) {
+        setIsLoading(false);
+        setErrorMessage('This Email Address is already registered. Please login.');
+        return;
+      }
+
+      // Save new user safely
+      const newUser: RegisteredUser = {
+        name,
+        email,
+        pass,
+        activatedAt: new Date().toISOString(),
+      };
+
+      registeredUsers.push(newUser);
+      localStorage.setItem('codeflow_registered_users', JSON.stringify(registeredUsers));
+
+      setIsLoading(false);
+      setSuccessMessage('Account created successfully! You can now sign in.');
+      
+      // Auto-prefill the email for ease of login
+      setIdentifier(email);
+      setPassword('');
+      
+      // Reset form states
+      setRegName('');
+      setRegEmail('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      
+      // Switch back to login mode after registration
+      setTimeout(() => {
+        setIsRegisterMode(false);
+        setSuccessMessage('');
+      }, 1500);
+    }, 800);
   };
 
   const completeLogin = (userName: string) => {
     setIsLoading(false);
-    setSuccessMessage('Login successful! Entering Code Flow SMS Dashboard...');
+    setSuccessMessage('Login successful! Welcome back...');
     
     // Save login state in localStorage
     localStorage.setItem('codeflow_logged_in', 'true');
@@ -107,16 +191,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       onLoginSuccess(userName);
     }, 600);
-  };
-
-  const handleActivationSuccess = (newEmail: string, newPass: string) => {
-    setIdentifier(newEmail);
-    setPassword(newPass);
-    setSuccessMessage('Account activated & approved! Signing you in automatically...');
-    
-    setTimeout(() => {
-      completeLogin(newEmail);
-    }, 800);
   };
 
   const handleForgotPasswordSubmit = (e: React.FormEvent) => {
@@ -132,17 +206,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 text-slate-100 relative overflow-hidden font-sans p-4 sm:p-6">
-      {/* Background Animated Subtle Glows */}
+      {/* Background Ambient Glows */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -left-32 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[100px]" />
       </div>
 
-      {/* Main Single Card - High Elegance, Unified Border */}
-      <div className="w-full max-w-md bg-slate-900/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl shadow-2xl shadow-cyan-950/30 p-6 sm:p-8 relative z-10">
+      {/* Elegant Container Card */}
+      <div className="w-full max-w-md bg-slate-900/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl shadow-2xl shadow-cyan-950/30 p-6 sm:p-8 relative z-10 transition-all duration-300">
         
-        {/* Top Logo & Header */}
+        {/* Logo and Brand Info */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-16 h-16 rounded-2xl bg-white p-1 shadow-xl shadow-cyan-500/20 flex items-center justify-center shrink-0 border border-slate-200 mb-3 transform hover:scale-105 transition-transform duration-300">
             <img
@@ -155,18 +229,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-1.5 justify-center">
             Code Flow <span className="text-cyan-400">SMS</span>
           </h1>
-          <p className="text-[11px] font-extrabold tracking-widest text-slate-400 uppercase mt-0.5">
+          <p className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase mt-0.5">
             ENTERPRISE VIRTUAL SMS GATEWAY
           </p>
         </div>
 
-        {/* Section Heading */}
-        <div className="mb-5 text-center">
-          <h2 className="text-base font-bold text-slate-200">
-            Sign In to Your Account
+        {/* Dynamic Headers based on Mode */}
+        <div className="mb-6 text-center">
+          <h2 className="text-lg font-bold text-white">
+            {isRegisterMode ? 'Create a New Account' : 'Sign In to Your Account'}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Enter your email or username and password to continue
+          <p className="text-xs text-slate-400 mt-1">
+            {isRegisterMode 
+              ? 'Fill in your details to register for a secure connection'
+              : 'Enter your credentials to manage your virtual gateway'}
           </p>
         </div>
 
@@ -174,7 +250,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         {errorMessage && (
           <div className="mb-4 p-3 rounded-2xl bg-rose-950/70 border border-rose-800/80 text-rose-300 text-xs font-semibold flex items-center gap-2.5 animate-shake">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{errorMessage}</span>
+            <span className="flex-1 text-left">{errorMessage}</span>
           </div>
         )}
 
@@ -182,139 +258,226 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         {successMessage && (
           <div className="mb-4 p-3 rounded-2xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-semibold flex items-center gap-2.5 animate-fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{successMessage}</span>
+            <span className="flex-1 text-left">{successMessage}</span>
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          {/* Field 1: Username or Email ID */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-              Username or Email ID
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <User className="w-4 h-4 text-cyan-400" />
+        {/* Mode Forms */}
+        {!isRegisterMode ? (
+          /* LOGIN FORM */
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
+                Username or Email ID
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <User className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="Enter your registered email or username"
+                  required
+                  autoComplete="username"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
+                />
               </div>
-              <input
-                type="text"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="xzrmunna7788@gmail.com"
-                required
-                className="w-full pl-10 pr-4 py-3 bg-slate-950/90 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
-              />
             </div>
-          </div>
 
-          {/* Field 2: Password */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-              Password
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <Lock className="w-4 h-4 text-cyan-400" />
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(true)}
+                  className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
               </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full pl-10 pr-11 py-3 bg-slate-950/90 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white transition cursor-pointer"
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Lock className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your security password"
+                  required
+                  autoComplete="current-password"
+                  className="w-full pl-10 pr-11 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white transition cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Remember Me & Forgot Password Row */}
-          <div className="flex items-center justify-between pt-1 pb-1">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 focus:ring-offset-0 cursor-pointer accent-cyan-500"
-              />
-              <span className="text-xs font-bold text-slate-400 hover:text-slate-300">
-                Remember Me
-              </span>
-            </label>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-red-500/15 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none mt-2"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>SIGN IN TO PANEL</span>
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          /* REGISTRATION FORM */
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
+                Full Name
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <User className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type="text"
+                  value={regName}
+                  onChange={(e) => setRegName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  required
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
+                />
+              </div>
+            </div>
 
-            {/* Forgot Password Link */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
+                Email Address
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Mail className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type="email"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  placeholder="e.g. name@domain.com"
+                  required
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
+                Security Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Lock className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type={showRegPassword ? 'text' : 'password'}
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="At least 5 characters"
+                  required
+                  className="w-full pl-10 pr-11 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRegPassword(!showRegPassword)}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white transition cursor-pointer"
+                >
+                  {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Lock className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type={showRegPassword ? 'text' : 'password'}
+                  value={regConfirmPassword}
+                  onChange={(e) => setRegConfirmPassword(e.target.value)}
+                  placeholder="Confirm security password"
+                  required
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-cyan-500/15 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none mt-2"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Registering...</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>CREATE REAL ACCOUNT</span>
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {/* Dynamic Navigation Mode Switcher */}
+        <div className="mt-6 pt-5 border-t border-slate-800/60 text-center">
+          <p className="text-xs text-slate-400">
+            {isRegisterMode ? 'Already have an account?' : "Don't have an account yet?"}{' '}
             <button
               type="button"
               onClick={() => {
-                setShowForgotModal(true);
-                setForgotSuccess(false);
+                setIsRegisterMode(!isRegisterMode);
+                setErrorMessage('');
+                setSuccessMessage('');
               }}
-              className="text-xs font-extrabold text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer"
+              className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer"
             >
-              Forgot Password?
+              {isRegisterMode ? 'Sign In Now' : 'Create Account'}
             </button>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-sm shadow-lg shadow-cyan-500/25 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
-          >
-            {isLoading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Signing in...</span>
-              </>
-            ) : (
-              <>
-                <LogIn className="w-4 h-4" />
-                <span>SIGN IN TO PANEL</span>
-                <ArrowRight className="w-4 h-4 ml-1" />
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Bottom Account Activation Trigger Button - Clean & Single Integrated Area */}
-        <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between">
-          <span className="text-xs text-slate-400 font-medium">New to Code Flow?</span>
-          
-          <button
-            type="button"
-            onClick={() => setShowActivationBot(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-950/90 to-blue-950/90 hover:from-cyan-900/90 hover:to-blue-900/90 border border-cyan-700/60 text-cyan-300 hover:text-cyan-200 text-xs font-black shadow-md shadow-cyan-950/40 transition duration-200 cursor-pointer group"
-          >
-            <div className="w-5 h-5 rounded-lg bg-cyan-500 text-slate-950 flex items-center justify-center group-hover:rotate-12 transition-transform duration-300">
-              <Bot className="w-3.5 h-3.5" />
-            </div>
-            <span>Account Active</span>
-            <Sparkles className="w-3 h-3 text-cyan-400 animate-pulse" />
-          </button>
+          </p>
         </div>
-      </div>
 
-      {/* Account Activation Chatbot Modal */}
-      <ActivationChatBot
-        isOpen={showActivationBot}
-        onClose={() => setShowActivationBot(false)}
-        onActivationSuccess={handleActivationSuccess}
-      />
+      </div>
 
       {/* Forgot Password Modal */}
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-slate-100">
             <button
-              onClick={() => setShowForgotModal(false)}
+              onClick={() => {
+                setShowForgotModal(false);
+                setForgotSuccess(false);
+                setForgotEmail('');
+              }}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -334,22 +497,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div className="space-y-4 py-3">
                 <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-xs font-medium leading-relaxed">
                   <p className="font-bold text-emerald-200 mb-1">Reset Link Sent!</p>
-                  Password reset instructions have been dispatched to your email (xzrmunna7788@gmail.com). You can also contact support for instant help.
+                  Password reset instructions have been dispatched to your email ({forgotEmail || 'your email'}). You can also contact support for instant help.
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
                       setShowForgotModal(false);
-                      setShowActivationBot(true);
+                      setForgotSuccess(false);
+                      setForgotEmail('');
                     }}
-                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    Open Activation Bot
-                  </button>
-                  <button
-                    onClick={() => setShowForgotModal(false)}
-                    className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer text-center"
                   >
                     Close
                   </button>
@@ -358,25 +515,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             ) : (
               <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter your registered Username or Email ID. We will send you instructions to reset your password.
+                  Enter your registered Email ID. We will send you instructions to reset your password.
                 </p>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Username or Email</label>
+                  <label className="text-xs font-bold text-slate-300">Email Address</label>
                   <input
-                    type="text"
+                    type="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="e.g. xzrmunna7788@gmail.com"
+                    placeholder="e.g. user@domain.com"
                     required
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-medium text-white placeholder-slate-500 focus:outline-none"
+                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-medium text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
                   />
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowForgotModal(false)}
+                    onClick={() => {
+                      setShowForgotModal(false);
+                      setForgotSuccess(false);
+                      setForgotEmail('');
+                    }}
                     className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                   >
                     Cancel
@@ -397,4 +558,3 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     </div>
   );
 };
-

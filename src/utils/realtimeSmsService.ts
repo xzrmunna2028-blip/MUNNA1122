@@ -2606,7 +2606,8 @@ export const ensureDefaultRentedNumbers = (): RentedNumber[] => {
     try {
       const parsed: RentedNumber[] = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        return parsed;
+        // Filter out any default demo numbers to keep it clean
+        return parsed.filter(n => n && n.number !== '+994997780131' && n.number !== '+855313910487' && !String(n.id).startsWith('NUM-IPRN-'));
       }
     } catch (e) {}
   }
@@ -2620,7 +2621,8 @@ export const ensureDefaultTestNumbers = () => {
     try {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        return parsed;
+        // Filter out any default demo numbers to keep it clean
+        return parsed.filter((n: any) => n && n.number !== '+994997780131' && n.number !== '+855313910487' && !String(n.id).startsWith('NUM-IPRN-'));
       }
     } catch (e) {}
   }

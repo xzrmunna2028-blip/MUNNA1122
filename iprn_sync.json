@@ -1,11 +1,11 @@
 {
-  "last_updated": "2026-09-08T14:43:00.000Z",
+  "last_updated": "2026-09-08T20:28:21.970Z",
   "metrics": {
     "messages": 0,
     "delivered": 0,
     "failed": 0,
     "todayCount": 0,
-    "deliveryRate": 0,
+    "deliveryRate": 0.0,
     "todayDate": "9/8/2026",
     "totalRanges": 0
   },
@@ -17,13 +17,48 @@
     "totalRanges": 0
   },
   "chart_data": [
-    { "date": "Sep 2", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 3", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 4", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 5", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 6", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 7", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 8", "total": 0, "delivered": 0, "failed": 0 }
+    {
+      "date": "Sep 2",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 3",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 4",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 5",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 6",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 7",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 8",
+      "total": 0,
+      "delivered": 0,
+      "failed": 0
+    }
   ],
   "active_sms_logs": [],
   "rented_numbers": []

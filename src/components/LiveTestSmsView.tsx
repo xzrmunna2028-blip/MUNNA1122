@@ -82,9 +82,9 @@ export const LiveTestSmsView: React.FC = () => {
   const [rangesStat, setRangesStat] = useState<number>(() => {
     try {
       const val = localStorage.getItem('ranges_stat');
-      return val ? parseInt(val, 10) : 110;
+      return val ? parseInt(val, 10) : 0;
     } catch {
-      return 110;
+      return 0;
     }
   });
 
@@ -505,97 +505,6 @@ export const LiveTestSmsView: React.FC = () => {
         <span className="hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer">Test System</span>
         <span>&gt;</span>
         <span className="text-slate-900 dark:text-white font-bold">Live Test SMS</span>
-      </div>
-
-      {/* Live API Key Input / Configuration Banner */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs relative overflow-hidden transition-all">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-lime-500 via-emerald-500 to-teal-500" />
-        
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-8 h-8 rounded-lg bg-lime-100 dark:bg-lime-950/50 text-lime-600 dark:text-lime-400 flex items-center justify-center shrink-0">
-                <Key className="w-4 h-4 stroke-[2.5]" />
-              </div>
-              <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
-                Live Test API Key
-              </h3>
-              {apiKey ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300/50 dark:border-emerald-800/50">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Key Connected
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300/50">
-                  Key Required
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              এখান থেকে একটি এপিআই কি (API Key) পেস্ট করে সেভ করুন। এই কি থেকে আসা সকল রিয়েল টাইম এসএমএস নিচে লাইভ শো করবে।
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto min-w-[320px] max-w-xl">
-            <div className="relative flex-1">
-              <input
-                type={isKeyVisible ? 'text' : 'password'}
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="Paste API Key here (e.g. sk_live_...)"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 pr-20 text-xs font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-lime-500/50 transition-all placeholder:text-slate-400"
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setIsKeyVisible(!isKeyVisible)}
-                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md transition cursor-pointer"
-                  title={isKeyVisible ? "Hide key" : "Show key"}
-                >
-                  {isKeyVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePasteKey}
-                  className="p-1 px-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 text-[10px] font-bold rounded-md transition flex items-center gap-1 cursor-pointer"
-                  title="Paste from clipboard"
-                >
-                  <Clipboard className="w-3 h-3" />
-                  Paste
-                </button>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSaveApiKey}
-              disabled={isSavingKey}
-              className="px-4 py-2.5 bg-lime-600 hover:bg-lime-700 active:scale-95 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
-            >
-              {isSavingKey ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Connecting...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3.5 h-3.5 fill-current" />
-                  <span>Connect Key</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {keySaveMessage && (
-          <div className={`mt-3 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-2 ${
-            keySaveMessage.type === 'success' 
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
-              : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-          }`}>
-            {keySaveMessage.type === 'success' ? <Check className="w-4 h-4 text-emerald-600" /> : <Key className="w-4 h-4 text-rose-600" />}
-            <span>{keySaveMessage.text}</span>
-          </div>
-        )}
       </div>
 
       {/* Top Metric Cards matching the screenshot */}
