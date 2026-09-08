@@ -8,7 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { DailyChartPoint } from '../types';
+import { DailyChartPoint } from '../types.js';
 
 interface TrafficChartCardProps {
   chartData: DailyChartPoint[];

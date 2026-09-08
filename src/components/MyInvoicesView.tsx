@@ -22,7 +22,7 @@ import {
   ArrowLeft,
   Trash2,
 } from 'lucide-react';
-import { PaymentMethod } from '../types';
+import { PaymentMethod } from '../types.js';
 
 interface InvoiceMetric {
   title: string;

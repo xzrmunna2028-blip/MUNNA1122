@@ -16,9 +16,9 @@ import {
   Eye,
   Zap,
 } from 'lucide-react';
-import { ensureDefaultTestNumbers } from '../utils/realtimeSmsService';
-import { OtpSessionModal } from './OtpSessionModal';
-import { RentedNumber, RealSmsLog } from '../types';
+import { ensureDefaultTestNumbers } from '../utils/realtimeSmsService.js';
+import { OtpSessionModal } from './OtpSessionModal.js';
+import { RentedNumber, RealSmsLog } from '../types.js';
 
 interface TestNumberItem {
   id: string;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
-import { TimePeriod } from '../types';
+import { TimePeriod } from '../types.js';
 
 interface TimeFilterBarProps {
   timePeriod: TimePeriod;

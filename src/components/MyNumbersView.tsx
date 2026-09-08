@@ -20,8 +20,8 @@ import {
   Eye,
 } from 'lucide-react';
 import { ensureDefaultRentedNumbers } from '../utils/realtimeSmsService';
-import { OtpSessionModal } from './OtpSessionModal';
-import { RentedNumber, RealSmsLog } from '../types';
+import { OtpSessionModal } from './OtpSessionModal.js';
+import { RentedNumber, RealSmsLog } from '../types.js';
 
 interface TerminationOption {
   code: string;

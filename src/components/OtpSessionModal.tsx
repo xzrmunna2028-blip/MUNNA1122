@@ -16,8 +16,8 @@ import {
   AlertCircle,
   Hash,
 } from 'lucide-react';
-import { RealSmsLog, RentedNumber } from '../types';
-import { dispatchIncomingOtp, getRealSmsLogs } from '../utils/realtimeSmsService';
+import { RealSmsLog, RentedNumber } from '../types.js';
+import { dispatchIncomingOtp, getRealSmsLogs } from '../utils/realtimeSmsService.js';
 
 interface OtpSessionModalProps {
   isOpen: boolean;

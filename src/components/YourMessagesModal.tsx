@@ -14,8 +14,8 @@ import {
   Download,
   Trash2,
 } from 'lucide-react';
-import { RealSmsLog } from '../types';
-import { getRealSmsLogs } from '../utils/realtimeSmsService';
+import { RealSmsLog } from '../types.js';
+import { getRealSmsLogs } from '../utils/realtimeSmsService.js';
 
 interface YourMessagesModalProps {
   isOpen: boolean;

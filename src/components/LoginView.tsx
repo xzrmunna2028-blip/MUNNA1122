@@ -13,7 +13,7 @@ import {
   UserPlus,
   Mail,
 } from 'lucide-react';
-import { RegisteredUser } from './ActivationChatBot';
+import { RegisteredUser } from './ActivationChatBot.js';
 
 interface LoginViewProps {
   onLoginSuccess: (username: string) => void;

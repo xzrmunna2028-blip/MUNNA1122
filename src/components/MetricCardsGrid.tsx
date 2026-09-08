@@ -1,6 +1,6 @@
 import React from 'react';
 import { MessageSquare, Check, AlertTriangle, Calendar } from 'lucide-react';
-import { MetricData } from '../types';
+import { MetricData } from '../types.js';
 
 interface MetricCardsGridProps {
   data: MetricData;
