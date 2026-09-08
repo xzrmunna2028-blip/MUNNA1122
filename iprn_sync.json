@@ -1,19 +1,19 @@
 {
-  "last_updated": "2026-09-08T20:28:21.970Z",
+  "last_updated": "2026-09-08T22:39:01.388Z",
   "metrics": {
-    "messages": 0,
-    "delivered": 0,
-    "failed": 0,
-    "todayCount": 0,
-    "deliveryRate": 0.0,
+    "messages": 2,
+    "delivered": 1,
+    "failed": 1,
+    "todayCount": 2,
+    "deliveryRate": 50,
     "todayDate": "9/8/2026",
     "totalRanges": 0
   },
   "realtime_counters": {
-    "totalMessages": 0,
-    "delivered": 0,
-    "failed": 0,
-    "charged": 0,
+    "totalMessages": 2,
+    "delivered": 1,
+    "failed": 1,
+    "charged": 1,
     "totalRanges": 0
   },
   "chart_data": [
@@ -55,11 +55,48 @@
     },
     {
       "date": "Sep 8",
-      "total": 0,
+      "total": 1,
       "delivered": 0,
-      "failed": 0
+      "failed": 1
     }
   ],
-  "active_sms_logs": [],
-  "rented_numbers": []
+  "active_sms_logs": [
+    {
+      "id": "MSG-WH-1788907141388-907",
+      "number": "+994997780131",
+      "termination": "Webhook Stream",
+      "sid": "Telegram",
+      "status": "DELIVERED",
+      "text": "Your Telegram verification code is 88492.",
+      "otp": "",
+      "timestamp": "2026-09-08T22:39:01.388Z",
+      "cost": "0.0096",
+      "sender": "KSI-IPRN-Webhook"
+    },
+    {
+      "id": "MSG-WH-1788906992405-444",
+      "number": "+855313910487",
+      "termination": "Webhook Stream",
+      "sid": "Google",
+      "status": "DELIVERED",
+      "text": "G-748291 is your Google verification code.",
+      "otp": "",
+      "timestamp": "2026-09-08T22:36:32.405Z",
+      "cost": "0.0090",
+      "sender": "KSI-IPRN-Webhook"
+    }
+  ],
+  "rented_numbers": [],
+  "activity_logs": [
+    {
+      "id": "ACT-WH-1788907141388-244",
+      "timestamp": "2026-09-08T22:39:01.388Z",
+      "event": "SMS",
+      "processedType": "message",
+      "description": "Ingested SMS payload for number +994997780131 (Status: DELIVERED)",
+      "status": "SUCCESS",
+      "ip": "127.0.0.1",
+      "userAgent": "curl/7.88.1"
+    }
+  ]
 }

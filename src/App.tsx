@@ -42,6 +42,8 @@ import {
   getRealSmsLogs,
 } from './utils/realtimeSmsService';
 
+import { clientDb, doc, onSnapshot } from './lib/firebaseClient';
+
 import {
   emptyMetricData,
   emptyRealtimeCounters,
@@ -154,13 +156,13 @@ export default function App() {
   useEffect(() => {
     fetchIprnMetrics();
 
-    // Setup SSE connection for instant real-time synchronization across all sessions
-    let eventSource: EventSource | null = null;
+    // Attach real-time Firestore listener for immediate database updates
+    let unsubscribeFirestore: (() => void) | null = null;
     try {
-      eventSource = new EventSource('/api/stream-updates');
-      eventSource.onmessage = (event) => {
-        try {
-          const json = JSON.parse(event.data);
+      const globalDocRef = doc(clientDb, 'settings', 'global');
+      unsubscribeFirestore = onSnapshot(globalDocRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const json = snapshot.data();
           if (json) {
             setSyncedData(json);
             if (json.last_updated) {
@@ -171,30 +173,30 @@ export default function App() {
               if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
               if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
             }
-            if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && json.active_sms_logs.length > 0) {
+            if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
               localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
               window.dispatchEvent(new Event('real_sms_updated'));
             }
-            if (json.rented_numbers && Array.isArray(json.rented_numbers) && json.rented_numbers.length > 0) {
+            if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
               localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
               window.dispatchEvent(new Event('rented_numbers_updated'));
             }
           }
-        } catch (e) {
-          console.error('Error parsing SSE stream message:', e);
         }
-      };
+      }, (error) => {
+        console.warn('Firestore real-time listener notice:', error);
+      });
     } catch (e) {
-      console.warn('EventSource SSE connection fallback:', e);
+      console.warn('Firestore real-time subscription fallback:', e);
     }
 
-    // Poll for real-time synchronization every 4 seconds as fallback
+    // Poll for real-time API metrics synchronization every 6 seconds as backup
     const interval = setInterval(() => {
       fetchIprnMetrics();
-    }, 4000);
+    }, 6000);
 
     return () => {
-      if (eventSource) eventSource.close();
+      if (unsubscribeFirestore) unsubscribeFirestore();
       clearInterval(interval);
     };
   }, []);

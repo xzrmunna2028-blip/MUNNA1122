@@ -172,6 +172,9 @@ export class CoreStore {
    * Writes the sync data object atomically to Firestore settings and collections.
    */
   public static async write(data: SyncData): Promise<boolean> {
+    // Automatically recompute metrics and dashboard counters before persisting
+    this.recomputeStats(data);
+
     // Force cache update
     this.cache = JSON.parse(JSON.stringify(data));
     this.lastReadTime = Date.now();

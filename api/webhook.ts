@@ -1,10 +1,33 @@
 import { CoreStore } from './_lib/store.js';
 
 /**
- * Highly Scalable Vercel Webhook API Route
- * Optimized for peak traffic and concurrency
+ * Highly Scalable Enterprise Webhook API Route
+ * Handles real-time API callbacks and webhooks with CORS & preflight support
  */
 export default async function handler(req: any, res: any) {
+  // Set CORS headers for external webhook origins
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+  // Handle CORS preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Handle GET verification challenges / webhook status checks
+  if (req.method === 'GET') {
+    const challenge = req.query?.['hub.challenge'] || req.query?.challenge || req.query?.echostr;
+    if (challenge) {
+      return res.status(200).send(challenge);
+    }
+    return res.status(200).json({
+      status: 'active',
+      message: 'CodeFlow Webhook listener is active and listening for real-time POST events.',
+      timestamp: new Date().toISOString()
+    });
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({
       status: 'error',
@@ -13,10 +36,30 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // Await non-blocking read
+    // Read current state from Firestore
     const data = await CoreStore.read();
-    const payload = req.body || {};
-    const eventType = payload.type || payload.event || 'auto';
+
+    // Safely parse incoming payload body
+    let payload = req.body || {};
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch (_) {
+        try {
+          const params = new URLSearchParams(payload);
+          payload = Object.fromEntries(params.entries());
+        } catch (e) {}
+      }
+    }
+
+    // Unwrap nested payload wrapper if present
+    if (payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
+      payload = { ...payload, ...payload.data };
+    } else if (payload.payload && typeof payload.payload === 'object' && !Array.isArray(payload.payload)) {
+      payload = { ...payload, ...payload.payload };
+    }
+
+    const eventType = String(payload.type || payload.event || payload.action || 'auto').toLowerCase();
     
     let processedType = 'unknown';
     let logMessage = '';
@@ -25,7 +68,13 @@ export default async function handler(req: any, res: any) {
     if (
       eventType === 'message' || 
       eventType === 'sms' ||
-      (payload.number && (payload.text || payload.content || payload.message || payload.otp))
+      eventType === 'otp' ||
+      payload.number || 
+      payload.msisdn || 
+      payload.text || 
+      payload.content || 
+      payload.message || 
+      payload.otp
     ) {
       processedType = 'message';
       logMessage = CoreStore.processSms(payload, data);
@@ -65,14 +114,14 @@ export default async function handler(req: any, res: any) {
     // Log Activity History
     CoreStore.logActivity(eventType, processedType, logMessage, req, data);
 
-    // Persist modifications asynchronously & non-blocking
+    // Persist modifications to Firestore
     await CoreStore.write(data);
 
     return res.status(200).json({
       status: 'success',
       processed: true,
       eventType: processedType,
-      message: 'Vercel Webhook processed successfully, activity history saved, and dashboard counters updated.',
+      message: 'Webhook event processed and synced to Firestore successfully.',
       activity: {
         description: logMessage,
         timestamp: new Date().toISOString()
@@ -88,8 +137,9 @@ export default async function handler(req: any, res: any) {
     console.error('[Vercel-Webhook] Serverless process failed:', error);
     return res.status(500).json({
       status: 'error',
-      message: 'Failed to process Vercel webhook securely',
+      message: 'Failed to process webhook event',
       error: error.message
     });
   }
 }
+
