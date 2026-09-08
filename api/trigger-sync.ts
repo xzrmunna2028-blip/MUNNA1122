@@ -1,83 +1,67 @@
-import fs from 'fs';
-import path from 'path';
+import { CoreStore } from './_lib/store';
 
+/**
+ * Highly Scalable Vercel Trigger-Sync API Route
+ * Synchronizes metrics from IPRN provider endpoints using robust fetch retries
+ */
 export default async function handler(req: any, res: any) {
-  // Support both GET and POST for triggering synchronization
   try {
-    const jsonPath = path.join(process.cwd(), 'iprn_sync.json');
+    const data = CoreStore.read();
     
-    // Read current sync data
-    let data: any = {
-      last_updated: new Date().toISOString(),
-      metrics: { messages: 0, delivered: 0, failed: 0, todayCount: 0, deliveryRate: 0, todayDate: "", totalRanges: 0 },
-      realtime_counters: { totalMessages: 0, delivered: 0, failed: 0, charged: 0, totalRanges: 0 },
-      chart_data: [],
-      active_sms_logs: [],
-      rented_numbers: [],
-      activity_logs: [],
-      iprn_api_key: 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z'
-    };
-
-    if (fs.existsSync(jsonPath)) {
-      try {
-        const raw = fs.readFileSync(jsonPath, 'utf8');
-        const parsed = JSON.parse(raw);
-        data = { ...data, ...parsed };
-      } catch (e) {
-        console.error('[Vercel-Sync] Error reading iprn_sync.json:', e);
-      }
-    }
-
-    // Determine API Key
+    // Default fallback API Key
     const apiKey = data.iprn_api_key || process.env.IPRN_API_KEY || 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z';
 
-    // 1. Fetch Real-time Numbers
+    // 1. Fetch Provider Numbers with Auto Retry & Rate Limit Handling
     let fetchedNumbers: any[] = [];
     try {
-      const numbersRes = await fetch('https://ksiiprn.com/api/v1/iprn/numbers?page=1', {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Accept': 'application/json'
-        }
-      });
+      const numbersRes = await CoreStore.fetchWithRetry(
+        'https://ksiiprn.com/api/v1/iprn/numbers?page=1',
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Accept': 'application/json'
+          }
+        },
+        3, // 3 retries
+        1000 // exponential delay
+      );
       
       if (numbersRes.ok) {
         const json = await numbersRes.json();
         if (json && json.success && Array.isArray(json.data)) {
           fetchedNumbers = json.data;
         }
-      } else {
-        console.warn(`[Vercel-Sync] Numbers API responded with status ${numbersRes.status}`);
       }
     } catch (err: any) {
-      console.error('[Vercel-Sync] Error fetching numbers from provider:', err.message);
+      console.error('[Vercel-Sync] Numbers fetch exhausted retries:', err.message);
     }
 
-    // 2. Fetch Real-time Messages
+    // 2. Fetch Provider Messages with Auto Retry & Rate Limit Handling
     let fetchedMessages: any[] = [];
-    let providerTotalMessages = 0;
     try {
-      const messagesRes = await fetch('https://ksiiprn.com/api/v1/iprn/messages?page=1', {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Accept': 'application/json'
-        }
-      });
+      const messagesRes = await CoreStore.fetchWithRetry(
+        'https://ksiiprn.com/api/v1/iprn/messages?page=1',
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Accept': 'application/json'
+          }
+        },
+        3, // 3 retries
+        1000 // exponential delay
+      );
       
       if (messagesRes.ok) {
         const json = await messagesRes.json();
         if (json && json.success && Array.isArray(json.data)) {
           fetchedMessages = json.data;
-          providerTotalMessages = json.pagination?.total || json.data.length || 0;
         }
-      } else {
-        console.warn(`[Vercel-Sync] Messages API responded with status ${messagesRes.status}`);
       }
     } catch (err: any) {
-      console.error('[Vercel-Sync] Error fetching messages from provider:', err.message);
+      console.error('[Vercel-Sync] Messages fetch exhausted retries:', err.message);
     }
 
-    // 3. Process and merge fetched numbers into rented_numbers
+    // 3. Import and format fetched numbers
     if (fetchedNumbers.length > 0) {
       const existingRented = data.rented_numbers || [];
       const numMap = new Map(existingRented.map((n: any) => [n.number, n]));
@@ -110,7 +94,7 @@ export default async function handler(req: any, res: any) {
       data.rented_numbers = Array.from(numMap.values());
     }
 
-    // 4. Process and merge fetched messages into active_sms_logs
+    // 4. Import and format fetched messages
     if (fetchedMessages.length > 0) {
       const existingLogs = data.active_sms_logs || [];
       const msgMap = new Map(existingLogs.map((m: any) => [m.id, m]));
@@ -137,63 +121,24 @@ export default async function handler(req: any, res: any) {
       data.active_sms_logs = Array.from(msgMap.values());
     }
 
-    // 5. Compute consolidated stats and metrics
-    const totalMessagesCount = data.active_sms_logs.length;
-    const deliveredCount = data.active_sms_logs.filter((l: any) => l.status === 'DELIVERED').length;
-    const failedCount = totalMessagesCount - deliveredCount;
-    const deliveryRateVal = totalMessagesCount > 0 ? Math.round((deliveredCount / totalMessagesCount) * 100) : 100;
-    const totalRangesCount = data.rented_numbers.length;
+    // Recompute stats and append success log
+    const logMsg = `Consolidated dynamic data from IPRN: Imported ${fetchedMessages.length} fresh messages & ${fetchedNumbers.length} ranges.`;
+    CoreStore.logActivity('SYNC', 'provider_sync', logMsg, req, data);
 
-    const now = new Date();
-    data.last_updated = now.toISOString();
-    
-    data.metrics = {
-      messages: totalMessagesCount,
-      delivered: deliveredCount,
-      failed: failedCount,
-      todayCount: totalMessagesCount,
-      deliveryRate: deliveryRateVal,
-      todayDate: now.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-      totalRanges: totalRangesCount
-    };
-
-    data.realtime_counters = {
-      totalMessages: totalMessagesCount,
-      delivered: deliveredCount,
-      failed: failedCount,
-      charged: totalMessagesCount,
-      totalRanges: totalRangesCount
-    };
-
-    // Log this provider sync activity
-    const newActivity = {
-      id: `ACT-SYNC-${Date.now()}`,
-      timestamp: now.toISOString(),
-      event: 'SYNC',
-      processedType: 'provider_sync',
-      description: `Provider sync: Consolidated ${totalMessagesCount} messages & ${totalRangesCount} ranges from IPRN API.`,
-      status: 'SUCCESS',
-      ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1',
-      userAgent: 'Vercel Serverless Sync SyncEngine'
-    };
-
-    data.activity_logs = [newActivity, ...(data.activity_logs || [])].slice(0, 150);
-
-    // Save consolidated metrics
-    fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+    // Save update atomically
+    CoreStore.write(data);
 
     return res.status(200).json({
       status: 'success',
-      simulated: false,
-      message: 'Successfully updated metrics data from IPRN API via Vercel WebsiteDataSync.',
+      message: 'Dynamic sync completed and metrics updated successfully.',
       data
     });
 
   } catch (err: any) {
-    console.error('[Vercel-Sync] Serverless sync error:', err);
+    console.error('[Vercel-Sync] Core trigger-sync failed:', err);
     return res.status(500).json({
       status: 'error',
-      message: 'Vercel Serverless Sync Failed',
+      message: 'Failed to synchronize with IPRN provider',
       error: err.message
     });
   }
