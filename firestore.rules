@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-+$.@]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation functions
+    function isValidSmsLog(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.number is string && data.number.size() <= 64
+        && data.text is string && data.text.size() <= 4096;
+    }
+
+    function isValidRentedNumber(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.number is string && data.number.size() <= 64;
+    }
+
+    function isValidActivityLog(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.event is string && data.event.size() <= 128
+        && data.description is string && data.description.size() <= 2048;
+    }
+
+    function isValidSystemState(data) {
+      return data.last_updated is string && data.last_updated.size() <= 128;
+    }
+
+    // Rule matchers
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isValidId(settingId) && isValidSystemState(incoming());
+    }
+
+    match /active_sms_logs/{logId} {
+      allow read: if true;
+      allow write: if isValidId(logId) && isValidSmsLog(incoming());
+    }
+
+    match /rented_numbers/{numberId} {
+      allow read: if true;
+      allow write: if isValidId(numberId) && isValidRentedNumber(incoming());
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if true;
+      allow write: if isValidId(logId) && isValidActivityLog(incoming());
+    }
+  }
+}

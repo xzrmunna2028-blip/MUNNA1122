@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { db } from './firebase.js';
 
 /**
  * Standardized Database Schema & Interfaces for Enterprise SMS Gateway
@@ -69,11 +71,9 @@ export interface SyncData {
   iprn_api_key?: string;
 }
 
-const JSON_FILE_NAME = 'iprn_sync.json';
-
 /**
  * Highly Optimized, High-Concurrency Thread-Safe CoreStore
- * Leverages in-memory caching and non-blocking asynchronous fs.promises operations.
+ * Leverages in-memory caching and real-time Firestore synchronization.
  */
 export class CoreStore {
   private static cache: SyncData | null = null;
@@ -81,12 +81,8 @@ export class CoreStore {
   private static cacheTTL = 1000; // 1-second hot read cache TTL to handle extreme request spikes
   private static writeQueue: Promise<boolean> = Promise.resolve(true); // Sequential queue to prevent race conditions on writes
 
-  private static getPath(): string {
-    return path.join(process.cwd(), JSON_FILE_NAME);
-  }
-
   /**
-   * Reads data with a 1-second in-memory caching layer and non-blocking async disk fallback.
+   * Reads data with a 1-second in-memory caching layer and real-time Firestore database synchronization.
    */
   public static async read(): Promise<SyncData> {
     const now = Date.now();
@@ -96,70 +92,131 @@ export class CoreStore {
       return JSON.parse(JSON.stringify(this.cache)); // Return deep clone to prevent accidental reference mutation
     }
 
-    const filePath = this.getPath();
-    const defaultData: SyncData = {
-      last_updated: new Date().toISOString(),
-      metrics: { messages: 0, delivered: 0, failed: 0, todayCount: 0, deliveryRate: 100, todayDate: "", totalRanges: 0 },
-      realtime_counters: { totalMessages: 0, delivered: 0, failed: 0, charged: 0, totalRanges: 0 },
-      chart_data: [],
-      active_sms_logs: [],
-      rented_numbers: [],
-      activity_logs: []
-    };
-
-    if (!fs.existsSync(filePath)) {
-      this.cache = defaultData;
-      this.lastReadTime = now;
-      return defaultData;
-    }
-
     try {
-      const raw = await fs.promises.readFile(filePath, 'utf8');
-      const parsed = JSON.parse(raw);
+      // 1. Fetch global settings
+      const settingsRef = doc(db, 'settings', 'global');
+      const settingsSnap = await getDoc(settingsRef);
       
-      const mergedData: SyncData = {
-        ...defaultData,
-        ...parsed,
-        metrics: { ...defaultData.metrics, ...(parsed.metrics || {}) },
-        realtime_counters: { ...defaultData.realtime_counters, ...(parsed.realtime_counters || {}) },
-        active_sms_logs: parsed.active_sms_logs || [],
-        rented_numbers: parsed.rented_numbers || [],
-        activity_logs: parsed.activity_logs || []
+      const defaultData: SyncData = {
+        last_updated: new Date().toISOString(),
+        metrics: { messages: 0, delivered: 0, failed: 0, todayCount: 0, deliveryRate: 100, todayDate: "", totalRanges: 0 },
+        realtime_counters: { totalMessages: 0, delivered: 0, failed: 0, charged: 0, totalRanges: 0 },
+        chart_data: [],
+        active_sms_logs: [],
+        rented_numbers: [],
+        activity_logs: []
       };
+
+      let mergedData: SyncData = { ...defaultData };
+
+      if (settingsSnap.exists()) {
+        const settingsData = settingsSnap.data() as Partial<SyncData>;
+        mergedData = {
+          ...mergedData,
+          ...settingsData,
+          metrics: { ...mergedData.metrics, ...(settingsData.metrics || {}) },
+          realtime_counters: { ...mergedData.realtime_counters, ...(settingsData.realtime_counters || {}) }
+        };
+      }
+
+      // 2. Fetch SMS logs collection
+      const smsSnap = await getDocs(collection(db, 'active_sms_logs'));
+      const smsLogs: SmsLog[] = [];
+      smsSnap.forEach((docSnap) => {
+        smsLogs.push(docSnap.data() as SmsLog);
+      });
+      // Sort by timestamp desc to match UI expectation
+      smsLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      mergedData.active_sms_logs = smsLogs;
+
+      // 3. Fetch Rented numbers
+      const numSnap = await getDocs(collection(db, 'rented_numbers'));
+      const numbers: RentedNumber[] = [];
+      numSnap.forEach((docSnap) => {
+        numbers.push(docSnap.data() as RentedNumber);
+      });
+      mergedData.rented_numbers = numbers;
+
+      // 4. Fetch Activity logs
+      const actSnap = await getDocs(collection(db, 'activity_logs'));
+      const activity: ActivityLog[] = [];
+      actSnap.forEach((docSnap) => {
+        activity.push(docSnap.data() as ActivityLog);
+      });
+      activity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      mergedData.activity_logs = activity.slice(0, 150);
 
       this.cache = mergedData;
       this.lastReadTime = now;
       return JSON.parse(JSON.stringify(mergedData));
     } catch (error) {
-      console.error('[CoreStore] Non-blocking read failed:', error);
-      return defaultData;
+      console.error('[CoreStore] Firestore read failed, attempting to serve cache:', error);
+      if (this.cache) {
+        return JSON.parse(JSON.stringify(this.cache));
+      }
+      
+      // Serve defaults as final fallback
+      return {
+        last_updated: new Date().toISOString(),
+        metrics: { messages: 0, delivered: 0, failed: 0, todayCount: 0, deliveryRate: 100, todayDate: "", totalRanges: 0 },
+        realtime_counters: { totalMessages: 0, delivered: 0, failed: 0, charged: 0, totalRanges: 0 },
+        chart_data: [],
+        active_sms_logs: [],
+        rented_numbers: [],
+        activity_logs: []
+      };
     }
   }
 
   /**
-   * Enqueues writes sequentially and executes them atomically.
+   * Writes the sync data object atomically to Firestore settings and collections.
    */
   public static async write(data: SyncData): Promise<boolean> {
     // Force cache update
     this.cache = JSON.parse(JSON.stringify(data));
     this.lastReadTime = Date.now();
 
-    // Enqueue write to prevent race conditions
     this.writeQueue = this.writeQueue.then(async () => {
-      const filePath = this.getPath();
-      const tempPath = `${filePath}.tmp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
       try {
         data.last_updated = new Date().toISOString();
-        const jsonString = JSON.stringify(data, null, 2);
-        
-        await fs.promises.writeFile(tempPath, jsonString, 'utf8');
-        await fs.promises.rename(tempPath, filePath);
+
+        // 1. Write settings/global
+        const settingsRef = doc(db, 'settings', 'global');
+        await setDoc(settingsRef, {
+          last_updated: data.last_updated,
+          iprn_api_key: data.iprn_api_key || '',
+          metrics: data.metrics,
+          realtime_counters: data.realtime_counters,
+          chart_data: data.chart_data || []
+        });
+
+        // 2. Write active_sms_logs concurrently
+        const smsPromises = (data.active_sms_logs || []).map((log) => {
+          if (!log || !log.id) return Promise.resolve();
+          return setDoc(doc(db, 'active_sms_logs', log.id), log);
+        });
+
+        // 3. Write rented_numbers
+        const numPromises = (data.rented_numbers || []).map((num) => {
+          if (!num || !num.id) return Promise.resolve();
+          return setDoc(doc(db, 'rented_numbers', num.id), num);
+        });
+
+        // 4. Write activity_logs
+        const actPromises = (data.activity_logs || []).map((act) => {
+          if (!act || !act.id) return Promise.resolve();
+          return setDoc(doc(db, 'activity_logs', act.id), act);
+        });
+
+        await Promise.all([
+          ...smsPromises,
+          ...numPromises,
+          ...actPromises
+        ]);
+
         return true;
       } catch (error) {
-        console.error('[CoreStore] Atomic async write failed:', error);
-        if (fs.existsSync(tempPath)) {
-          try { await fs.promises.unlink(tempPath); } catch (_) {}
-        }
+        console.error('[CoreStore] Firestore atomic write failed:', error);
         return false;
       }
     });

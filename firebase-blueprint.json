@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "SmsLog": {
+      "title": "SMS Log",
+      "description": "Enterprise SMS log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "termination": { "type": "string" },
+        "sid": { "type": "string" },
+        "status": { "type": "string" },
+        "text": { "type": "string" },
+        "otp": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "cost": { "type": "string" },
+        "sender": { "type": "string" }
+      },
+      "required": ["id", "number", "text", "timestamp"]
+    },
+    "RentedNumber": {
+      "title": "Rented Number",
+      "description": "A rented range or virtual number",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "rangeName": { "type": "string" },
+        "range": { "type": "string" },
+        "allocatedAt": { "type": "string" },
+        "status": { "type": "string" },
+        "operator": { "type": "string" },
+        "monthlyPrice": { "type": "string" },
+        "rate": { "type": "string" },
+        "term": { "type": "string" },
+        "country": { "type": "string" },
+        "cost": { "type": "string" }
+      },
+      "required": ["id", "number"]
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "System or user activity log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "event": { "type": "string" },
+        "processedType": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "ip": { "type": "string" },
+        "userAgent": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "event", "description"]
+    },
+    "SystemState": {
+      "title": "System State",
+      "description": "Global synchronized application state",
+      "type": "object",
+      "properties": {
+        "last_updated": { "type": "string" },
+        "iprn_api_key": { "type": "string" },
+        "metrics": { "type": "object" },
+        "realtime_counters": { "type": "object" },
+        "chart_data": { "type": "array" }
+      }
+    }
+  },
+  "firestore": {
+    "settings/global": {
+      "schema": "SystemState",
+      "description": "Global system state and configuration"
+    },
+    "active_sms_logs/{logId}": {
+      "schema": "SmsLog",
+      "description": "Collection of incoming SMS logs"
+    },
+    "rented_numbers/{numberId}": {
+      "schema": "RentedNumber",
+      "description": "Collection of active and suspended rented numbers"
+    },
+    "activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Collection of system audit logs"
+    }
+  }
+}
