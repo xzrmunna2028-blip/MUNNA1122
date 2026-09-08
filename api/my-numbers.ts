@@ -1,4 +1,4 @@
-import { CoreStore } from './_lib/store';
+import { CoreStore } from './_lib/store.js';
 
 export default async function handler(req: any, res: any) {
   try {

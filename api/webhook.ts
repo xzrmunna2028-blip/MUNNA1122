@@ -1,4 +1,4 @@
-import { CoreStore } from './_lib/store';
+import { CoreStore } from './_lib/store.js';
 
 /**
  * Highly Scalable Vercel Webhook API Route
