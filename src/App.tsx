@@ -55,7 +55,13 @@ import {
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    return localStorage.getItem('codeflow_active_tab') || 'dashboard';
+  });
+  
+  useEffect(() => {
+    localStorage.setItem('codeflow_active_tab', activeTab);
+  }, [activeTab]);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('codeflow_theme');
     if (saved) return saved === 'dark';
