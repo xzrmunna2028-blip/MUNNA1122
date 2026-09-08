@@ -2,7 +2,7 @@ import { CoreStore } from './_lib/store';
 
 /**
  * Highly Scalable Vercel Webhook API Route
- * Integrates directly with the CoreStore microservice engine
+ * Optimized for peak traffic and concurrency
  */
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -13,7 +13,8 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const data = CoreStore.read();
+    // Await non-blocking read
+    const data = await CoreStore.read();
     const payload = req.body || {};
     const eventType = payload.type || payload.event || 'auto';
     
@@ -64,8 +65,8 @@ export default async function handler(req: any, res: any) {
     // Log Activity History
     CoreStore.logActivity(eventType, processedType, logMessage, req, data);
 
-    // Persist modifications atomically
-    CoreStore.write(data);
+    // Persist modifications asynchronously & non-blocking
+    await CoreStore.write(data);
 
     return res.status(200).json({
       status: 'success',

@@ -72,17 +72,30 @@ export interface SyncData {
 const JSON_FILE_NAME = 'iprn_sync.json';
 
 /**
- * Robust Read and Transactional Write Store for iprn_sync.json data
+ * Highly Optimized, High-Concurrency Thread-Safe CoreStore
+ * Leverages in-memory caching and non-blocking asynchronous fs.promises operations.
  */
 export class CoreStore {
+  private static cache: SyncData | null = null;
+  private static lastReadTime = 0;
+  private static cacheTTL = 1000; // 1-second hot read cache TTL to handle extreme request spikes
+  private static writeQueue: Promise<boolean> = Promise.resolve(true); // Sequential queue to prevent race conditions on writes
+
   private static getPath(): string {
     return path.join(process.cwd(), JSON_FILE_NAME);
   }
 
   /**
-   * Reads data with solid structural fallbacks
+   * Reads data with a 1-second in-memory caching layer and non-blocking async disk fallback.
    */
-  public static read(): SyncData {
+  public static async read(): Promise<SyncData> {
+    const now = Date.now();
+    
+    // Serve from cache if TTL has not expired
+    if (this.cache && (now - this.lastReadTime < this.cacheTTL)) {
+      return JSON.parse(JSON.stringify(this.cache)); // Return deep clone to prevent accidental reference mutation
+    }
+
     const filePath = this.getPath();
     const defaultData: SyncData = {
       last_updated: new Date().toISOString(),
@@ -95,13 +108,16 @@ export class CoreStore {
     };
 
     if (!fs.existsSync(filePath)) {
+      this.cache = defaultData;
+      this.lastReadTime = now;
       return defaultData;
     }
 
     try {
-      const raw = fs.readFileSync(filePath, 'utf8');
+      const raw = await fs.promises.readFile(filePath, 'utf8');
       const parsed = JSON.parse(raw);
-      return {
+      
+      const mergedData: SyncData = {
         ...defaultData,
         ...parsed,
         metrics: { ...defaultData.metrics, ...(parsed.metrics || {}) },
@@ -110,83 +126,154 @@ export class CoreStore {
         rented_numbers: parsed.rented_numbers || [],
         activity_logs: parsed.activity_logs || []
       };
+
+      this.cache = mergedData;
+      this.lastReadTime = now;
+      return JSON.parse(JSON.stringify(mergedData));
     } catch (error) {
-      console.error('[CoreStore] Failed to read or parse storage file:', error);
+      console.error('[CoreStore] Non-blocking read failed:', error);
       return defaultData;
     }
   }
 
   /**
-   * Writes dataset atomically using a temp file to prevent corrupted partial writes
+   * Enqueues writes sequentially and executes them atomically.
    */
-  public static write(data: SyncData): boolean {
-    const filePath = this.getPath();
-    const tempPath = `${filePath}.tmp-${Date.now()}`;
-    try {
-      data.last_updated = new Date().toISOString();
-      fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-      fs.renameSync(tempPath, filePath);
-      return true;
-    } catch (error) {
-      console.error('[CoreStore] Atomic write failed:', error);
-      if (fs.existsSync(tempPath)) {
-        try { fs.unlinkSync(tempPath); } catch (_) {}
+  public static async write(data: SyncData): Promise<boolean> {
+    // Force cache update
+    this.cache = JSON.parse(JSON.stringify(data));
+    this.lastReadTime = Date.now();
+
+    // Enqueue write to prevent race conditions
+    this.writeQueue = this.writeQueue.then(async () => {
+      const filePath = this.getPath();
+      const tempPath = `${filePath}.tmp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      try {
+        data.last_updated = new Date().toISOString();
+        const jsonString = JSON.stringify(data, null, 2);
+        
+        await fs.promises.writeFile(tempPath, jsonString, 'utf8');
+        await fs.promises.rename(tempPath, filePath);
+        return true;
+      } catch (error) {
+        console.error('[CoreStore] Atomic async write failed:', error);
+        if (fs.existsSync(tempPath)) {
+          try { await fs.promises.unlink(tempPath); } catch (_) {}
+        }
+        return false;
       }
-      return false;
-    }
+    });
+
+    return this.writeQueue;
   }
 
   /**
-   * Processes an incoming message webhook or sync payload
+   * Processes an incoming message webhook or sync payload with defensive validation and safe sanitization
    */
   public static processSms(payload: any, data: SyncData): string {
-    const id = String(payload.id || payload.message_id || `MSG-V-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
-    let numStr = String(payload.number || payload.msisdn || '');
-    if (numStr && !numStr.startsWith('+')) numStr = '+' + numStr;
+    if (!payload || typeof payload !== 'object') {
+      return 'Rejected invalid/empty SMS payload.';
+    }
+
+    // Defensive schema parsing and sanitization
+    const id = String(payload.id || payload.message_id || payload.msg_id || `MSG-V-${Date.now()}-${Math.floor(Math.random() * 1000)}`).trim();
+    
+    let rawNum = String(payload.number || payload.msisdn || payload.phone || '').trim();
+    if (rawNum && !rawNum.startsWith('+')) {
+      rawNum = '+' + rawNum;
+    }
+    
+    // Coerce other attributes into safe defaults to prevent undefined/null UI crashes
+    const termination = String(payload.termination || payload.range_name || payload.range || payload.rangeName || 'IPRN Ingress').trim();
+    const sid = String(payload.sid || payload.sender_id || payload.sender || 'WEBHOOK').trim();
+    
+    // Normalize status
+    let status = String(payload.status || 'DELIVERED').toUpperCase().trim();
+    if (!['DELIVERED', 'FAILED', 'PENDING'].includes(status)) {
+      status = 'DELIVERED';
+    }
+
+    const text = String(payload.text || payload.content || payload.message || '').trim();
+    const otp = String(payload.otp || '').trim();
+    const timestamp = String(payload.timestamp || payload.created_at || new Date().toISOString()).trim();
+    
+    // Parse cost safely to guard against malformed floats
+    let costVal = 0.0100;
+    try {
+      const parsedCost = parseFloat(payload.cost || payload.rate || payload.a2p_rate || '0.0100');
+      if (!isNaN(parsedCost)) costVal = parsedCost;
+    } catch (_) {}
+    const cost = `${costVal.toFixed(4)} USD`;
+
+    const sender = String(payload.sender || payload.sender_id || 'IPRN-Gateway').trim();
 
     const newLog: SmsLog = {
       id,
-      number: numStr,
-      termination: String(payload.termination || payload.range_name || payload.range || 'IPRN Webhook Ingress'),
-      sid: String(payload.sid || payload.sender_id || payload.sender || 'WEBHOOK'),
-      status: String(payload.status || 'DELIVERED').toUpperCase(),
-      text: String(payload.text || payload.content || payload.message || ''),
-      otp: String(payload.otp || ''),
-      timestamp: String(payload.timestamp || payload.created_at || new Date().toISOString()),
-      cost: `${parseFloat(payload.cost || payload.rate || 0.0100).toFixed(4)} USD`,
-      sender: String(payload.sender || payload.sender_id || 'IPRN-Gateway')
+      number: rawNum,
+      termination,
+      sid,
+      status,
+      text,
+      otp,
+      timestamp,
+      cost,
+      sender
     };
 
-    // Filter duplicate and push to head
-    data.active_sms_logs = [newLog, ...data.active_sms_logs.filter((l) => l.id !== id)];
+    // Filter duplicate and push to head of array
+    data.active_sms_logs = [newLog, ...(data.active_sms_logs || []).filter((l) => l && l.id !== id)];
     this.recomputeStats(data);
 
-    return `Ingested SMS payload for number ${numStr} (Status: ${newLog.status})`;
+    return `Ingested SMS payload for number ${rawNum} (Status: ${status})`;
   }
 
   /**
-   * Processes incoming number or rented number payloads
+   * Processes incoming number or rented number payloads with strong type safety checks
    */
   public static processNumbers(payload: any, data: SyncData): string {
+    if (!payload) return 'Rejected empty number payload.';
+
     const rawNums = payload.numbers || payload.rented_numbers || payload.number_list || [];
     const incomingList = Array.isArray(rawNums) ? rawNums : [rawNums];
     
     let addedCount = 0;
     incomingList.forEach((n: any) => {
-      if (!n || (!n.number && typeof n !== 'string')) return;
-      const numVal = typeof n === 'string' ? n : n.number;
-      const formattedNum = numVal.startsWith('+') ? numVal : '+' + numVal;
+      if (!n) return;
       
-      const existingIdx = data.rented_numbers.findIndex((rn) => rn.number === formattedNum);
+      const numVal = (typeof n === 'string' ? n : String(n.number || n.msisdn || '')).trim();
+      if (!numVal) return;
+
+      const formattedNum = numVal.startsWith('+') ? numVal : '+' + numVal;
+      const existingIdx = (data.rented_numbers || []).findIndex((rn) => rn && rn.number === formattedNum);
+      
+      const range = String((typeof n === 'object' ? (n.range || n.rangeName || n.range_name || n.termination) : '') || 'IPRN Webhook Range').trim();
+      const allocatedAt = String((typeof n === 'object' ? (n.allocatedAt || n.created_at || n.timestamp) : '') || new Date().toISOString()).trim();
+      const status = String((typeof n === 'object' ? (n.status) : '') || 'Active').trim();
+      const operator = String((typeof n === 'object' ? (n.operator) : '') || (range.includes(' - ') ? range.split(' - ')[1] : 'Virtual Carrier')).trim();
+      
+      let priceVal = 0.00;
+      try {
+        const parsedPrice = parseFloat(typeof n === 'object' ? (n.monthlyPrice || n.price || n.cost || '0.00') : '0.00');
+        if (!isNaN(parsedPrice)) priceVal = parsedPrice;
+      } catch (_) {}
+      const monthlyPrice = `${priceVal.toFixed(2)} USD`;
+
       const mappedNumber: RentedNumber = {
-        id: n.id || `NUM-API-${formattedNum.replace('+', '')}`,
+        id: String((typeof n === 'object' && n.id) ? n.id : `NUM-API-${formattedNum.replace('+', '')}`).trim(),
         number: formattedNum,
-        range: n.range || n.rangeName || 'IPRN Webhook Range',
-        allocatedAt: n.allocatedAt || new Date().toISOString(),
-        status: n.status || 'Active',
-        operator: n.operator || 'Virtual Carrier',
-        monthlyPrice: n.monthlyPrice || '0.00 USD'
+        range,
+        allocatedAt,
+        status,
+        operator,
+        monthlyPrice,
+        // Match frontend extended properties for statistics and list views
+        rate: monthlyPrice,
+        term: range,
+        country: range.includes(' - ') ? range.split(' - ')[0] : 'Global',
+        cost: monthlyPrice
       };
+
+      if (!data.rented_numbers) data.rented_numbers = [];
 
       if (existingIdx !== -1) {
         data.rented_numbers[existingIdx] = { ...data.rented_numbers[existingIdx], ...mappedNumber };

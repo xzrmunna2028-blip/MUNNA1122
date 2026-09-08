@@ -2,11 +2,11 @@ import { CoreStore } from './_lib/store';
 
 /**
  * Highly Scalable Vercel Trigger-Sync API Route
- * Synchronizes metrics from IPRN provider endpoints using robust fetch retries
+ * Synchronizes metrics from IPRN provider endpoints using robust non-blocking operations
  */
 export default async function handler(req: any, res: any) {
   try {
-    const data = CoreStore.read();
+    const data = await CoreStore.read();
     
     // Default fallback API Key
     const apiKey = data.iprn_api_key || process.env.IPRN_API_KEY || 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z';
@@ -125,8 +125,8 @@ export default async function handler(req: any, res: any) {
     const logMsg = `Consolidated dynamic data from IPRN: Imported ${fetchedMessages.length} fresh messages & ${fetchedNumbers.length} ranges.`;
     CoreStore.logActivity('SYNC', 'provider_sync', logMsg, req, data);
 
-    // Save update atomically
-    CoreStore.write(data);
+    // Save update asynchronously
+    await CoreStore.write(data);
 
     return res.status(200).json({
       status: 'success',

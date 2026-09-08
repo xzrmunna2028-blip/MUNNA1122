@@ -35,73 +35,75 @@ export const RealtimeCountersCard: React.FC<RealtimeCountersCardProps> = ({
         </div>
       </div>
 
-      {/* Grid of Counters */}
-      <div className="p-5 grid grid-cols-2 gap-4 sm:gap-6">
-        {/* TOTAL MESSAGES */}
-        <div 
-          onClick={() => onCounterClick?.('total')}
-          className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer group"
-          title="Tap to view all messages"
-        >
-          <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-1 group-hover:text-slate-700 dark:group-hover:text-slate-300">
-            TOTAL MESSAGES
-          </span>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-              {counters.totalMessages.toLocaleString()}
+      {/* Grid of Counters - Chessboard Style with high-visibility borders */}
+      <div className="p-4 sm:p-5">
+        <div className="grid grid-cols-2 gap-px bg-slate-300 dark:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden shadow-xs">
+          {/* TOTAL MESSAGES (Top-Left: Shaded) */}
+          <div 
+            onClick={() => onCounterClick?.('total')}
+            className="p-4 sm:p-5 bg-slate-50/95 dark:bg-slate-800/50 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 transition cursor-pointer group flex flex-col justify-between"
+            title="Tap to view all messages"
+          >
+            <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-2 group-hover:text-slate-700 dark:group-hover:text-slate-300">
+              TOTAL MESSAGES
             </span>
-            <span className="text-[10px] text-[#65a30d] font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            <div className="flex items-baseline justify-between mt-auto">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+                {counters.totalMessages.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-[#65a30d] font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            </div>
           </div>
-        </div>
 
-        {/* DELIVERED */}
-        <div 
-          onClick={() => onCounterClick?.('delivered')}
-          className="p-3 rounded-xl hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition cursor-pointer group"
-          title="Tap to view delivered messages"
-        >
-          <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-            DELIVERED
-          </span>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
-              {counters.delivered.toLocaleString()}
+          {/* DELIVERED (Top-Right: White) */}
+          <div 
+            onClick={() => onCounterClick?.('delivered')}
+            className="p-4 sm:p-5 bg-white dark:bg-slate-900 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/10 transition cursor-pointer group flex flex-col justify-between"
+            title="Tap to view delivered messages"
+          >
+            <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+              DELIVERED
             </span>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            <div className="flex items-baseline justify-between mt-auto">
+              <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                {counters.delivered.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            </div>
           </div>
-        </div>
 
-        {/* FAILED */}
-        <div 
-          onClick={() => onCounterClick?.('failed')}
-          className="p-3 rounded-xl hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition cursor-pointer group pt-3 border-t border-slate-100 dark:border-slate-800/80"
-          title="Tap to view failed messages"
-        >
-          <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-1 group-hover:text-rose-600 dark:group-hover:text-rose-400">
-            FAILED
-          </span>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl sm:text-3xl font-extrabold text-rose-600 dark:text-rose-400">
-              {counters.failed.toLocaleString()}
+          {/* FAILED (Bottom-Left: White) */}
+          <div 
+            onClick={() => onCounterClick?.('failed')}
+            className="p-4 sm:p-5 bg-white dark:bg-slate-900 hover:bg-rose-50/40 dark:hover:bg-rose-950/10 transition cursor-pointer group flex flex-col justify-between"
+            title="Tap to view failed messages"
+          >
+            <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-2 group-hover:text-rose-600 dark:group-hover:text-rose-400">
+              FAILED
             </span>
-            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            <div className="flex items-baseline justify-between mt-auto">
+              <span className="text-2xl sm:text-3xl font-extrabold text-rose-600 dark:text-rose-400">
+                {counters.failed.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            </div>
           </div>
-        </div>
 
-        {/* CHARGED */}
-        <div 
-          onClick={() => onCounterClick?.('charged')}
-          className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer group pt-3 border-t border-slate-100 dark:border-slate-800/80"
-          title="Tap to view charged messages"
-        >
-          <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-1 group-hover:text-slate-700 dark:group-hover:text-slate-300">
-            CHARGED
-          </span>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-              {counters.charged.toLocaleString()}
+          {/* CHARGED (Bottom-Right: Shaded) */}
+          <div 
+            onClick={() => onCounterClick?.('charged')}
+            className="p-4 sm:p-5 bg-slate-50/95 dark:bg-slate-800/50 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 transition cursor-pointer group flex flex-col justify-between"
+            title="Tap to view charged messages"
+          >
+            <span className="text-[11px] tracking-wider uppercase font-bold text-slate-400 dark:text-slate-500 block mb-2 group-hover:text-slate-700 dark:group-hover:text-slate-300">
+              CHARGED
             </span>
-            <span className="text-[10px] text-[#65a30d] font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            <div className="flex items-baseline justify-between mt-auto">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+                {counters.charged.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-[#65a30d] font-bold opacity-0 group-hover:opacity-100 transition">View →</span>
+            </div>
           </div>
         </div>
       </div>

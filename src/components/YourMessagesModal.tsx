@@ -195,8 +195,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                  <span>Your Messages</span>
-                  <span className="text-xs font-medium text-slate-400 font-sans">(ইউর মেসেজ)</span>
+                  <span>Client Active SMS</span>
                 </h2>
                 {targetNumber && (
                   <span className="px-2.5 py-0.5 rounded-md bg-lime-100 border border-lime-300 text-lime-800 text-xs font-mono font-bold">
@@ -421,8 +420,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                  <span>Your Messages</span>
-                  <span className="text-xs font-medium text-slate-400 font-sans">(ইউর মেসেজ)</span>
+                  <span>Client Active SMS</span>
                 </h2>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-lime-100 border border-lime-300 text-lime-800">
                   <span className="w-2 h-2 rounded-full bg-lime-600 animate-pulse" />
