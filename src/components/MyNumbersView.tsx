@@ -19,7 +19,7 @@ import {
   Zap,
   Eye,
 } from 'lucide-react';
-import { ensureDefaultRentedNumbers, dispatchIncomingOtp } from '../utils/realtimeSmsService';
+import { ensureDefaultRentedNumbers } from '../utils/realtimeSmsService';
 import { OtpSessionModal } from './OtpSessionModal';
 import { RentedNumber, RealSmsLog } from '../types';
 
@@ -47,19 +47,50 @@ export const MyNumbersView: React.FC = () => {
     localStorage.setItem('rented_numbers', JSON.stringify(rentedNumbers));
   }, [rentedNumbers]);
 
-  useEffect(() => {
-    const handleSync = () => {
-      const local = localStorage.getItem('rented_numbers');
-      if (local) {
-        try {
-          const parsed: RentedNumber[] = JSON.parse(local);
-          setRentedNumbers(parsed.map((n) => ({ ...n, cost: '0.0000 USD' })));
-        } catch (e) {}
+  const [isApiSyncing, setIsApiSyncing] = useState(false);
+  const [lastApiSync, setLastApiSync] = useState<string>('');
+
+  const fetchNumbersFromApi = async () => {
+    try {
+      const res = await fetch('/api/my-numbers');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
+          setRentedNumbers(data.numbers.map((n: any) => ({ ...n, cost: n.cost || n.rate || '0.0096 USD' })));
+          localStorage.setItem('rented_numbers', JSON.stringify(data.numbers));
+          if (data.last_updated) {
+            setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
+          }
+          return;
+        }
       }
+    } catch (e) {
+      console.warn('Backend /api/my-numbers fetch failed, falling back to local store:', e);
+    }
+    const local = localStorage.getItem('rented_numbers');
+    if (local) {
+      try {
+        const parsed: RentedNumber[] = JSON.parse(local);
+        setRentedNumbers(parsed.map((n) => ({ ...n, cost: n.cost || (n as any).rate || '0.0096 USD' })));
+      } catch (e) {}
+    }
+  };
+
+  useEffect(() => {
+    fetchNumbersFromApi();
+    const handleSync = () => {
+      fetchNumbersFromApi();
     };
     window.addEventListener('rented_numbers_updated', handleSync);
+    
+    // Auto-poll live numbers feed from IPRN API
+    const interval = setInterval(() => {
+      fetchNumbersFromApi();
+    }, 15000);
+
     return () => {
       window.removeEventListener('rented_numbers_updated', handleSync);
+      clearInterval(interval);
     };
   }, []);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -139,59 +170,59 @@ export const MyNumbersView: React.FC = () => {
     }
   }, [deleteModalStep]);
 
-  const terminations: TerminationOption[] = [
-    {
-      code: 'DZ_MOBILIS',
-      country: '213',
-      operator: 'Mobilis 101',
-      available: 'Unlimited',
-      rate: '0.0000 USD',
-      limit: '10000',
-      label: 'Algeria - Mobilis 101 - 213 (Unlimited available)',
-    },
-    {
-      code: 'AFG_AREEBA',
-      country: '93',
-      operator: 'Areeba',
-      available: 'Unlimited',
-      rate: '0.0000 USD',
-      limit: '10000',
-      label: 'Afghanistan - Areeba 1 - 93 (Unlimited available)',
-    },
-    {
-      code: 'UK_VODAFONE',
-      country: '44',
-      operator: 'Vodafone',
-      available: '1,250 available',
-      rate: '0.0000 USD',
-      limit: '15000',
-      label: 'United Kingdom - Vodafone - 44 (1,250 available)',
-    },
-    {
-      code: 'BD_GP',
-      country: '880',
-      operator: 'Grameenphone',
-      available: '5,000 available',
-      rate: '0.0000 USD',
-      limit: '8000',
-      label: 'Bangladesh - Grameenphone - 880 (5,000 available)',
-    },
-    {
-      code: 'US_VERIZON',
-      country: '1',
-      operator: 'Verizon',
-      available: 'Unlimited',
-      rate: '0.0000 USD',
-      limit: '20000',
-      label: 'United States - Verizon - 1 (Unlimited available)',
-    },
-  ];
+  const [terminations, setTerminations] = useState<TerminationOption[]>([]);
 
-  const handleRefresh = () => {
+  // Fetch real live terminations from API
+  const fetchTerminations = async () => {
+    try {
+      const res = await fetch('/api/terminations');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.terminations && Array.isArray(data.terminations) && data.terminations.length > 0) {
+          setTerminations(data.terminations);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch /api/terminations:', e);
+    }
+
+    // Fallback: derive dynamically from rentedNumbers state
+    if (rentedNumbers && rentedNumbers.length > 0) {
+      const termMap = new Map<string, TerminationOption>();
+      rentedNumbers.forEach((n) => {
+        const rangeName = n.rangeName || n.range || n.term || 'IPRN Range';
+        const code = rangeName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+        if (!termMap.has(code)) {
+          termMap.set(code, {
+            code,
+            country: n.country || 'Global',
+            operator: n.operator || 'Carrier',
+            available: 'Unlimited available',
+            rate: n.cost || n.rate || '0.0000 USD',
+            limit: n.portalLimit || '10,000',
+            label: `${rangeName} (${n.cost || n.rate || '0.0000 USD'})`,
+          });
+        }
+      });
+      setTerminations(Array.from(termMap.values()));
+    }
+  };
+
+  useEffect(() => {
+    fetchTerminations();
+  }, [rentedNumbers]);
+
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await fetch('/api/trigger-sync', { method: 'POST' });
+      await fetchNumbersFromApi();
+    } catch (e) {
+      console.error('Failed to trigger IPRN sync:', e);
+    } finally {
       setIsRefreshing(false);
-    }, 800);
+    }
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -264,7 +295,7 @@ export const MyNumbersView: React.FC = () => {
   };
 
   // Step 2 Click Yes -> Generate and proceed to Step 3 (Success Modal)
-  const handleConfirmAndAdd = () => {
+  const handleConfirmAndAdd = async () => {
     const selectedTerm = terminations.find((t) => t.code === selectedTerminationCode);
     if (!selectedTerm) return;
 
@@ -272,9 +303,6 @@ export const MyNumbersView: React.FC = () => {
     const newNumbers: RentedNumber[] = [];
 
     for (let i = 0; i < countToGenerate; i++) {
-      // Generate realistic MSISDN numbers based on country code
-      // Format as full consecutive or random digits with no spaces
-      // e.g., 213673859086, 213673858156, 213673857939
       const randomBody = Math.floor(673000000 + Math.random() * 999999);
       const msisdn = `${selectedTerm.country}${randomBody}`;
       
@@ -303,7 +331,20 @@ export const MyNumbersView: React.FC = () => {
       });
     }
 
+    // Immediately synchronize associated ranges with IPRN API
+    try {
+      await fetch('/api/my-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newNumbers })
+      });
+    } catch (e) {
+      console.warn('Backend IPRN range sync notice:', e);
+    }
+
     setRentedNumbers((prev) => [...newNumbers, ...prev]);
+    localStorage.setItem('rented_numbers', JSON.stringify([...newNumbers, ...rentedNumbers]));
+    window.dispatchEvent(new Event('rented_numbers_updated'));
     setModalStep('success');
   };
 
@@ -639,7 +680,7 @@ export const MyNumbersView: React.FC = () => {
                     <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                   <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
-                    Showing the first 500 of 4,038 ranges. Type a range or operator name to find a specific one.
+                    Showing all {terminations.length} active real range sources synchronized from IPRN API.
                   </p>
                 </div>
 

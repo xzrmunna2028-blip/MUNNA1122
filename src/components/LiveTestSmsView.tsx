@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Volume2, 
   VolumeX, 
@@ -6,7 +6,9 @@ import {
   Download, 
   Search, 
   Layers, 
-  Mail 
+  Mail,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 interface SmsLog {
@@ -27,19 +29,22 @@ export const LiveTestSmsView: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
   const [liveLogs, setLiveLogs] = useState<SmsLog[]>([]);
+  const [isConnected, setIsConnected] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [activeRangesCount, setActiveRangesCount] = useState<number>(0);
+  const prevCountRef = useRef(0);
 
-  // Defined premium gateway routes matching user platform design
-  const routes = [
-    { name: 'Ecuador - CNT 10', prefix: '+593', defaultNum: '593996993564', cost: '0.0000 USD', flag: 'EC' },
-    { name: 'Ecuador - CNT 2', prefix: '+593', defaultNum: '593996893355', cost: '0.0000 USD', flag: 'EC' },
-    { name: 'Benin - Celtiis 102', prefix: '+229', defaultNum: '2290145205298', cost: '0.0000 USD', flag: 'BJ' },
-    { name: 'Benin - All Networks 88', prefix: '+229', defaultNum: '2290160562020', cost: '0.0000 USD', flag: 'BJ' },
-    { name: 'Bolivia - Orange', prefix: '+591', defaultNum: '59171234567', cost: '0.0000 USD', flag: 'BO' },
-    { name: 'Bangladesh - Grameenphone', prefix: '+880', defaultNum: '8801723849583', cost: '0.0000 USD', flag: 'BD' },
-    { name: 'United Kingdom - Vodafone', prefix: '+44', defaultNum: '447385293847', cost: '0.0000 USD', flag: 'GB' },
-    { name: 'Algeria - Mobilis 101', prefix: '+213', defaultNum: '213673859086', cost: '0.0000 USD', flag: 'DZ' },
-    { name: 'Azerbaijan - Bakcell 3', prefix: '+994', defaultNum: '994997780131', cost: '0.0000 USD', flag: 'AZ' },
-  ];
+  // Dynamic live gateway routes matching user platform design & API numbers
+  const [routes, setRoutes] = useState([
+    { name: 'Azerbaijan - Bakcell 3', prefix: '+994', defaultNum: '994997780131', cost: '0.0096 USD', flag: 'AZ' },
+    { name: 'Cambodia 860', prefix: '+855', defaultNum: '85586012345', cost: '0.0096 USD', flag: 'KH' },
+    { name: 'Ecuador - CNT 10', prefix: '+593', defaultNum: '593996993564', cost: '0.0096 USD', flag: 'EC' },
+    { name: 'Benin - Celtiis 102', prefix: '+229', defaultNum: '2290145205298', cost: '0.0096 USD', flag: 'BJ' },
+    { name: 'Bolivia - Orange', prefix: '+591', defaultNum: '59171234567', cost: '0.0096 USD', flag: 'BO' },
+    { name: 'Bangladesh - Grameenphone', prefix: '+880', defaultNum: '8801723849583', cost: '0.0096 USD', flag: 'BD' },
+    { name: 'United Kingdom - Vodafone', prefix: '+44', defaultNum: '447385293847', cost: '0.0096 USD', flag: 'GB' },
+    { name: 'Algeria - Mobilis 101', prefix: '+213', defaultNum: '213673859086', cost: '0.0096 USD', flag: 'DZ' },
+  ]);
 
   // Sound generator
   const playSmsSound = () => {
@@ -62,25 +67,81 @@ export const LiveTestSmsView: React.FC = () => {
     }
   };
 
-  // Sync logs
-  const loadLogs = () => {
+  // Sync logs directly from live IPRN API endpoint
+  const loadLogs = async () => {
+    try {
+      fetch('/api/my-numbers')
+        .then(r => r.json())
+        .then(data => {
+          if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
+            const rangeNames = new Set(data.numbers.map((n: any) => n.rangeName || n.term || 'Range'));
+            setActiveRangesCount(rangeNames.size);
+
+            // Dynamically populate route cards from active live numbers
+            const dynamicRoutesMap = new Map();
+            data.numbers.forEach((n: any) => {
+              const rName = n.rangeName || n.term || n.range;
+              if (rName && !dynamicRoutesMap.has(rName)) {
+                const rawClean = n.number.replace('+', '');
+                const prefix = n.number.startsWith('+') ? n.number.substring(0, 4) : '+' + n.number.substring(0, 3);
+                const flagCode = rName.includes('Azerbaijan') ? 'AZ' : rName.includes('Cambodia') ? 'KH' : rName.includes('Ecuador') ? 'EC' : rName.includes('Benin') ? 'BJ' : rName.includes('Bolivia') ? 'BO' : rName.includes('Bangladesh') ? 'BD' : rName.includes('United Kingdom') ? 'GB' : rName.includes('Algeria') ? 'DZ' : 'AZ';
+                dynamicRoutesMap.set(rName, {
+                  name: rName,
+                  prefix,
+                  defaultNum: rawClean,
+                  cost: n.cost || n.rate || '0.0096 USD',
+                  flag: flagCode
+                });
+              }
+            });
+            if (dynamicRoutesMap.size > 0) {
+              setRoutes(Array.from(dynamicRoutesMap.values()));
+            }
+          }
+        })
+        .catch(() => {});
+
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          if (data.logs.length > prevCountRef.current && prevCountRef.current !== 0) {
+            playSmsSound();
+          }
+          prevCountRef.current = data.logs.length;
+          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
+          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
+          setIsConnected(true);
+          if (data.last_updated) {
+            setLastSyncTime(new Date(data.last_updated).toLocaleTimeString());
+          } else {
+            setLastSyncTime(new Date().toLocaleTimeString());
+          }
+          return;
+        }
+      }
+      setIsConnected(true);
+    } catch (e) {
+      setIsConnected(false);
+    }
+
     const existing = localStorage.getItem('real_sms_logs');
     if (existing) {
       try {
         const parsed = JSON.parse(existing);
-        setLiveLogs(parsed.map((l: any) => ({ ...l, cost: '0.0000 USD' })));
-        return;
+        setLiveLogs(parsed.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
       } catch (e) {}
     }
-    setLiveLogs([]);
   };
 
   useEffect(() => {
     loadLogs();
     const handleSync = () => loadLogs();
     window.addEventListener('real_sms_updated', handleSync);
+    const interval = setInterval(loadLogs, 8000);
     return () => {
       window.removeEventListener('real_sms_updated', handleSync);
+      clearInterval(interval);
     };
   }, []);
 
@@ -112,6 +173,18 @@ export const LiveTestSmsView: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   };
+
+  // Dynamic available countries
+  const availableCountries = useMemo(() => {
+    const list = new Set<string>(['Benin', 'Ecuador', 'Bolivia', 'Bangladesh', 'Algeria', 'Azerbaijan', 'United Kingdom', 'United States']);
+    liveLogs.forEach(l => {
+      if (l.termination) {
+        const first = l.termination.split(' - ')[0].trim();
+        if (first) list.add(first);
+      }
+    });
+    return Array.from(list).sort();
+  }, [liveLogs]);
 
   // Flag renderer
   const renderFlag = (termination: string) => {
@@ -151,6 +224,37 @@ export const LiveTestSmsView: React.FC = () => {
         </div>
       );
     }
+    if (termination.includes('Algeria')) {
+      return (
+        <div className="w-8 h-8 rounded-lg overflow-hidden flex shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+          <div className="w-1/2 bg-[#006233]" />
+          <div className="w-1/2 bg-white" />
+        </div>
+      );
+    }
+    if (termination.includes('Azerbaijan')) {
+      return (
+        <div className="w-8 h-8 rounded-lg overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+          <div className="h-1/3 bg-[#00B5E2]" />
+          <div className="h-1/3 bg-[#EF3340]" />
+          <div className="h-1/3 bg-[#509E2F]" />
+        </div>
+      );
+    }
+    if (termination.includes('United Kingdom') || termination.includes('UK')) {
+      return (
+        <div className="w-8 h-8 bg-[#012169] rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+          🇬🇧
+        </div>
+      );
+    }
+    if (termination.includes('United States') || termination.includes('US')) {
+      return (
+        <div className="w-8 h-8 bg-[#0A3161] rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+          🇺🇸
+        </div>
+      );
+    }
     return <div className="w-8 h-8 bg-slate-200 dark:bg-slate-800 rounded-lg flex items-center justify-center text-[10px]">🌐</div>;
   };
 
@@ -158,17 +262,14 @@ export const LiveTestSmsView: React.FC = () => {
   const totalMessagesCount = liveLogs.length;
   
   const rangesCount = useMemo(() => {
-    const prefixes = new Set<string>();
+    const rangeSet = new Set<string>();
     liveLogs.forEach(log => {
-      const matched = routes.find(r => log.termination.includes(r.name.split(' - ')[0]));
-      if (matched) {
-        prefixes.add(matched.prefix);
-      } else {
-        prefixes.add(log.number.substring(0, 3));
+      if (log.termination) {
+        rangeSet.add(log.termination.trim());
       }
     });
-    return prefixes.size;
-  }, [liveLogs]);
+    return Math.max(activeRangesCount, rangeSet.size);
+  }, [liveLogs, activeRangesCount]);
 
   // Filters
   const filteredLogs = useMemo(() => {
@@ -284,9 +385,23 @@ export const LiveTestSmsView: React.FC = () => {
                 {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               </button>
 
-              <div className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Connected</span>
+              <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+                isConnected 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
+                  : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400'
+              }`}>
+                {isConnected ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Connected</span>
+                    {lastSyncTime && <span className="text-[10px] opacity-75 font-normal ml-1">({lastSyncTime})</span>}
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3.5 h-3.5" />
+                    <span>Reconnecting...</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -308,13 +423,12 @@ export const LiveTestSmsView: React.FC = () => {
               <select
                 value={selectedCountry}
                 onChange={(e) => setSelectedCountry(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:outline-none"
+                className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:outline-none cursor-pointer"
               >
                 <option value="All">All Countries</option>
-                <option value="Benin">Benin</option>
-                <option value="Ecuador">Ecuador</option>
-                <option value="Bolivia">Bolivia</option>
-                <option value="Bangladesh">Bangladesh</option>
+                {availableCountries.map(country => (
+                  <option key={country} value={country}>{country}</option>
+                ))}
               </select>
 
               <button

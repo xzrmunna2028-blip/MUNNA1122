@@ -12,9 +12,11 @@ import {
   Copy,
   Check,
   Eye,
+  RefreshCw,
 } from 'lucide-react';
 import { dispatchIncomingOtp } from '../utils/realtimeSmsService';
 import { OtpSessionModal } from './OtpSessionModal';
+import { YourMessagesModal } from './YourMessagesModal';
 import { RealSmsLog } from '../types';
 
 interface SmsLog {
@@ -29,7 +31,15 @@ interface SmsLog {
   service?: string;
 }
 
-export const ClientActiveSmsView: React.FC = () => {
+interface ClientActiveSmsViewProps {
+  initialFilter?: 'all' | 'delivered' | 'failed' | 'today' | null;
+  onClearFilter?: () => void;
+}
+
+export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
+  initialFilter,
+  onClearFilter,
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
@@ -38,13 +48,41 @@ export const ClientActiveSmsView: React.FC = () => {
   const [isLivePaused, setIsLivePaused] = useState(false);
   const [copiedOtp, setCopiedOtp] = useState<string | null>(null);
 
+  // Inner session white dashboard filter
+  const [innerSessionFilter, setInnerSessionFilter] = useState<'all' | 'delivered' | 'failed' | 'today' | null>(null);
+
+  useEffect(() => {
+    if (initialFilter) {
+      setInnerSessionFilter(initialFilter);
+    }
+  }, [initialFilter]);
+
   // OTP Session Modal
   const [inspectorModalOpen, setInspectorModalOpen] = useState(false);
   const [selectedLogForModal, setSelectedLogForModal] = useState<RealSmsLog | null>(null);
   const [isReceivingOtp, setIsReceivingOtp] = useState(false);
+  const [isApiSyncing, setIsApiSyncing] = useState(false);
+  const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  // Sync with real-time logs in localStorage
-  const loadLogs = () => {
+  // Sync with real-time logs in backend API and localStorage
+  const loadLogs = async () => {
+    try {
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: '0.0000 USD' })));
+          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
+          if (data.last_updated) {
+            setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Backend /api/active-sms fetch failed, checking local cache:', e);
+    }
+
     const existing = localStorage.getItem('real_sms_logs');
     if (existing) {
       try {
@@ -56,12 +94,31 @@ export const ClientActiveSmsView: React.FC = () => {
     setLiveLogs([]);
   };
 
+  const handleSyncWithIprn = async () => {
+    setIsApiSyncing(true);
+    try {
+      await fetch('/api/trigger-sync', { method: 'POST' });
+      await loadLogs();
+    } catch (e) {
+      console.error('IPRN API trigger-sync error:', e);
+    } finally {
+      setIsApiSyncing(false);
+    }
+  };
+
   useEffect(() => {
     loadLogs();
     const handleSync = () => loadLogs();
     window.addEventListener('real_sms_updated', handleSync);
+    
+    // Auto-poll live active SMS feed every 10 seconds
+    const interval = setInterval(() => {
+      loadLogs();
+    }, 10000);
+
     return () => {
       window.removeEventListener('real_sms_updated', handleSync);
+      clearInterval(interval);
     };
   }, []);
 
@@ -70,14 +127,30 @@ export const ClientActiveSmsView: React.FC = () => {
     window.dispatchEvent(new Event('real_sms_updated'));
   };
 
-  const handleReceiveLiveOtp = () => {
+  const handleReceiveLiveOtp = async () => {
     setIsReceivingOtp(true);
-    setTimeout(() => {
-      const newLog = dispatchIncomingOtp();
-      setIsReceivingOtp(false);
-      setSelectedLogForModal(newLog);
-      setInspectorModalOpen(true);
-    }, 450);
+    try {
+      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && json.data.active_sms_logs && json.data.active_sms_logs.length > 0) {
+          const latestLog = json.data.active_sms_logs[0];
+          localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
+          window.dispatchEvent(new Event('real_sms_updated'));
+          setSelectedLogForModal(latestLog as RealSmsLog);
+          setInspectorModalOpen(true);
+          setIsReceivingOtp(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Sync trigger error:', e);
+    }
+
+    const newLog = dispatchIncomingOtp();
+    setIsReceivingOtp(false);
+    setSelectedLogForModal(newLog);
+    setInspectorModalOpen(true);
   };
 
   // Helper to extract OTP code
@@ -135,6 +208,31 @@ export const ClientActiveSmsView: React.FC = () => {
     }
   };
 
+  if (innerSessionFilter) {
+    return (
+      <div className="space-y-6 pb-12">
+        {/* Breadcrumb section matching user screenshot */}
+        <div className="flex items-center gap-1 text-xs font-semibold text-slate-400 dark:text-slate-500">
+          <span>Dashboard</span>
+          <span className="text-slate-300 dark:text-slate-600">&gt;</span>
+          <span>Client System</span>
+          <span className="text-slate-300 dark:text-slate-600">&gt;</span>
+          <span className="text-slate-800 dark:text-slate-200 font-bold">Client Active SMS</span>
+        </div>
+
+        <YourMessagesModal
+          isOpen={true}
+          inlineView={true}
+          initialFilter={innerSessionFilter}
+          onClose={() => {
+            setInnerSessionFilter(null);
+            if (onClearFilter) onClearFilter();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {/* Breadcrumb section matching user screenshot */}
@@ -159,10 +257,13 @@ export const ClientActiveSmsView: React.FC = () => {
       {/* 4 Square Cards Grid (2x2) */}
       <div className="grid grid-cols-2 gap-3.5 sm:gap-5">
         {/* Card 1: TOTAL MESSAGES */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40">
+        <div 
+          onClick={() => setInnerSessionFilter('all')}
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40 cursor-pointer hover:shadow-md hover:border-lime-500/40 transition-all active:scale-[0.99] group"
+        >
           <div className="absolute top-0 left-0 right-0 h-1 bg-[#65a30d]" />
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest group-hover:text-[#65a30d] transition-colors">
               TOTAL MESSAGES
             </span>
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#ecfccb] dark:bg-lime-950/50 text-[#65a30d] dark:text-lime-400 flex items-center justify-center shrink-0">
@@ -174,16 +275,20 @@ export const ClientActiveSmsView: React.FC = () => {
               {totalCount}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">
-            Real Time
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 flex items-center justify-between">
+            <span>Real Time</span>
+            <span className="text-[10px] text-lime-600 dark:text-lime-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Inspect →</span>
           </p>
         </div>
 
         {/* Card 2: DELIVERED */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40">
+        <div 
+          onClick={() => setInnerSessionFilter('delivered')}
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40 cursor-pointer hover:shadow-md hover:border-emerald-500/40 transition-all active:scale-[0.99] group"
+        >
           <div className="absolute top-0 left-0 right-0 h-1 bg-[#10b981]" />
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest group-hover:text-[#10b981] transition-colors">
               DELIVERED
             </span>
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#d1fae5] dark:bg-emerald-950/50 text-[#059669] dark:text-emerald-400 flex items-center justify-center shrink-0">
@@ -195,16 +300,20 @@ export const ClientActiveSmsView: React.FC = () => {
               {deliveredCount}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">
-            Confirmed by receipt
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 flex items-center justify-between">
+            <span>Confirmed by receipt</span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Inspect →</span>
           </p>
         </div>
 
-        {/* Card 3: PENDING */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40">
+        {/* Card 3: PENDING / TODAY */}
+        <div 
+          onClick={() => setInnerSessionFilter('today')}
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40 cursor-pointer hover:shadow-md hover:border-amber-500/40 transition-all active:scale-[0.99] group"
+        >
           <div className="absolute top-0 left-0 right-0 h-1 bg-[#f59e0b]" />
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest group-hover:text-[#f59e0b] transition-colors">
               PENDING
             </span>
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#fef3c7] dark:bg-amber-950/50 text-[#d97706] dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -216,16 +325,20 @@ export const ClientActiveSmsView: React.FC = () => {
               {pendingCount}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">
-            Awaiting a receipt
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 flex items-center justify-between">
+            <span>Awaiting a receipt</span>
+            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Inspect →</span>
           </p>
         </div>
 
         {/* Card 4: FAILED */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40">
+        <div 
+          onClick={() => setInnerSessionFilter('failed')}
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xs flex flex-col justify-between h-36 sm:h-40 cursor-pointer hover:shadow-md hover:border-rose-500/40 transition-all active:scale-[0.99] group"
+        >
           <div className="absolute top-0 left-0 right-0 h-1 bg-[#ef4444]" />
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+            <span className="text-[10px] sm:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest group-hover:text-[#ef4444] transition-colors">
               FAILED
             </span>
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#fee2e2] dark:bg-rose-950/50 text-[#dc2626] dark:text-rose-400 flex items-center justify-center shrink-0">
@@ -237,8 +350,9 @@ export const ClientActiveSmsView: React.FC = () => {
               {failedCount}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">
-            Not delivered
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 flex items-center justify-between">
+            <span>Not delivered</span>
+            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Inspect →</span>
           </p>
         </div>
       </div>
@@ -257,6 +371,16 @@ export const ClientActiveSmsView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncWithIprn}
+              disabled={isApiSyncing}
+              title="Synchronize live SMS directly from IPRN API"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-xs font-bold hover:bg-sky-100 transition disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3 h-3 ${isApiSyncing ? 'animate-spin' : ''}`} />
+              <span>{isApiSyncing ? 'Syncing...' : 'Sync IPRN API'}</span>
+            </button>
+
             <button
               onClick={() => setIsLivePaused(!isLivePaused)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#dcfce7] dark:bg-emerald-950/60 border border-[#bbf7d0] dark:border-emerald-800/80 text-[#166534] dark:text-emerald-300 text-xs font-extrabold cursor-pointer hover:opacity-90 transition"

@@ -37,11 +37,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
     if (savedKeys) {
       try {
         const list = JSON.parse(savedKeys);
-        const userKey = list.find((k: any) => k.user?.toLowerCase() === 'xzrmunna7788@gmail.com');
+        const userKey = list.find((k: any) => k.user?.toLowerCase() === 'xzrmunna974@gmail.com' || k.user?.toLowerCase() === 'xzrmunna7788@gmail.com');
         if (userKey) return userKey.key;
       } catch (e) {}
     }
-    return 'cf_live_9a87f21b4e9812ad88f192';
+    return 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z';
   });
 
   useEffect(() => {
@@ -259,7 +259,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
                 Active Key:
               </span>
               <span className="font-mono text-sm font-bold text-[#65a30d] dark:text-lime-400 truncate">
-                {showApiKey ? apiKey : 'cf_live_••••••••••••••••'}
+                {showApiKey ? apiKey : 'sk_live_••••••••••••••••••••••••••••'}
               </span>
             </div>
 

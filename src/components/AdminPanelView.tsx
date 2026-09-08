@@ -337,11 +337,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     return [
       {
         id: 'KEY-1',
-        name: 'Master Production Gateway',
-        key: 'cf_live_9a87f21b4e9812ad88f192',
-        user: 'xzrmunna7788@gmail.com',
-        rateLimit: '1000 req/min',
-        created: '2026-08-15',
+        name: 'IPRN Production Master Key',
+        key: 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z',
+        user: 'xzrmunna974@gmail.com',
+        rateLimit: '5000 req/min',
+        created: '2026-09-01',
         status: 'Active',
       },
       {

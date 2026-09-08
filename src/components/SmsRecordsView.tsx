@@ -130,7 +130,20 @@ export const SmsRecordsView: React.FC = () => {
     };
   };
 
-  const loadAllRecords = () => {
+  const loadAllRecords = async () => {
+    try {
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+          const customItems = (data.logs as SmsLog[]).map(convertCustomLog);
+          setRecords(customItems);
+          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
+          return;
+        }
+      }
+    } catch (e) {}
+
     const existing = localStorage.getItem('real_sms_logs');
     let customItems: SmsRecordItem[] = [];
     if (existing) {
@@ -141,7 +154,6 @@ export const SmsRecordsView: React.FC = () => {
         // ignore
       }
     }
-    // Prepend custom items to show newest first
     setRecords([...customItems, ...preseededRecords]);
   };
 
@@ -149,9 +161,11 @@ export const SmsRecordsView: React.FC = () => {
     loadAllRecords();
     window.addEventListener('storage', loadAllRecords);
     window.addEventListener('real_sms_updated', loadAllRecords);
+    const interval = setInterval(loadAllRecords, 10000);
     return () => {
       window.removeEventListener('storage', loadAllRecords);
       window.removeEventListener('real_sms_updated', loadAllRecords);
+      clearInterval(interval);
     };
   }, []);
 

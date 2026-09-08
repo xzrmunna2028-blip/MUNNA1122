@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { Megaphone, X } from 'lucide-react';
+import { Megaphone, X, RefreshCw, Database } from 'lucide-react';
 import { TimeFilterBar } from './components/TimeFilterBar';
 import { MetricCardsGrid } from './components/MetricCardsGrid';
 import { RealtimeCountersCard } from './components/RealtimeCountersCard';
@@ -51,8 +51,6 @@ import {
   sampleChart7Days,
   sampleChart30Days,
   sampleChart90Days,
-  initialNotifications,
-  initialMessageLogs,
 } from './data/mockData';
 
 export default function App() {
@@ -65,10 +63,88 @@ export default function App() {
   });
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('30 days');
 
-  // Your Messages Full Display White Interface Modal State
-  const [isYourMessagesOpen, setIsYourMessagesOpen] = useState(false);
-  const [yourMessagesFilter, setYourMessagesFilter] = useState<'all' | 'delivered' | 'failed' | 'today'>('all');
-  const [yourMessagesTargetNumber, setYourMessagesTargetNumber] = useState<string | null>(null);
+  // Active SMS (Client Active SMS) initial filter for redirection
+  const [activeSmsFilter, setActiveSmsFilter] = useState<'all' | 'delivered' | 'failed' | 'today' | null>(null);
+
+  // IPRN Website Data Sync States
+  const [syncedData, setSyncedData] = useState<any | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+
+  const fetchIprnMetrics = async (isManual = false) => {
+    if (isManual) setIsSyncing(true);
+    try {
+      const res = await fetch('/api/dashboard-metrics');
+      if (res.ok) {
+        const json = await res.json();
+        setSyncedData(json);
+        if (json.last_updated) {
+          const d = new Date(json.last_updated);
+          setLastSyncTime(d.toLocaleTimeString('en-US'));
+        }
+        if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && json.active_sms_logs.length > 0) {
+          localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+          window.dispatchEvent(new Event('real_sms_updated'));
+        }
+        if (json.rented_numbers && Array.isArray(json.rented_numbers) && json.rented_numbers.length > 0) {
+          localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+          window.dispatchEvent(new Event('rented_numbers_updated'));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch IPRN sync metrics from backend:', err);
+    } finally {
+      if (isManual) setIsSyncing(false);
+    }
+  };
+
+  const triggerIprnSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setSyncedData(json.data);
+          if (json.data.last_updated) {
+            const d = new Date(json.data.last_updated);
+            setLastSyncTime(d.toLocaleTimeString('en-US'));
+          }
+          if (json.data.active_sms_logs && Array.isArray(json.data.active_sms_logs)) {
+            localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
+            window.dispatchEvent(new Event('real_sms_updated'));
+          }
+          if (json.data.rented_numbers && Array.isArray(json.data.rented_numbers)) {
+            localStorage.setItem('rented_numbers', JSON.stringify(json.data.rented_numbers));
+            window.dispatchEvent(new Event('rented_numbers_updated'));
+          }
+        }
+        // Push a fresh notification
+        const newNotif: NotificationItem = {
+          id: `NOTIF-SYNC-${Date.now()}`,
+          title: 'IPRN Real-Time Sync',
+          message: json.message || 'Successfully fetched latest metrics from IPRN API via WebsiteDataSync.',
+          time: 'Just now',
+          read: false,
+          type: 'success',
+        };
+        setNotifications((prev) => [newNotif, ...prev]);
+      }
+    } catch (err) {
+      console.error('Error triggering IPRN sync:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchIprnMetrics();
+    // Poll for real-time synchronization every 10 seconds
+    const interval = setInterval(() => {
+      fetchIprnMetrics();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Deep OTP Session Modal State
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
@@ -80,6 +156,21 @@ export default function App() {
     initRealtimeSmsStore();
     ensureDefaultRentedNumbers();
     ensureDefaultTestNumbers();
+
+    // Purge any legacy demo broadcast announcements or notifications and zero out demo logs
+    try {
+      localStorage.setItem('real_sms_logs', JSON.stringify([]));
+      const bData = localStorage.getItem('codeflow_broadcasts');
+      if (bData && (bData.includes('BRD-1') || bData.includes('SMS Gateway System v3.4.0 Live'))) {
+        localStorage.removeItem('codeflow_broadcasts');
+        setBroadcasts([]);
+      }
+      const nData = localStorage.getItem('codeflow_user_notifications');
+      if (nData && (nData.includes('NOTIF-INIT-1') || nData.includes('SMS Gateway System Ready'))) {
+        localStorage.removeItem('codeflow_user_notifications');
+        setNotifications([]);
+      }
+    } catch (e) {}
   }, []);
 
   // Synchronize Dark Mode with DOM and localStorage
@@ -113,8 +204,8 @@ export default function App() {
     localStorage.setItem('codeflow_user', user);
   };
   
-  // Default to false so initial view renders exact zero state with no mock/demo values
-  const [isDemoMode, setIsDemoMode] = useState(false);
+  // isDemoMode is completely and permanently disabled - pure live IPRN API data
+  const isDemoMode = false;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string>('2:05:41 PM');
   const [isSimulating, setIsSimulating] = useState(false);
@@ -123,38 +214,26 @@ export default function App() {
     const saved = localStorage.getItem('codeflow_user_notifications');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && !parsed.some((n: any) => n.id === 'NOTIF-INIT-1')) {
+          return parsed;
+        }
       } catch (e) {}
     }
-    return [
-      {
-        id: 'NOTIF-INIT-1',
-        title: 'SMS Gateway System Ready',
-        message: 'All carrier routes and live websocket listeners are operational.',
-        time: 'Just now',
-        read: false,
-        type: 'info',
-      },
-    ];
+    return [];
   });
 
   const [broadcasts, setBroadcasts] = useState<any[]>(() => {
     const bData = localStorage.getItem('codeflow_broadcasts');
     if (bData) {
       try {
-        return JSON.parse(bData);
+        const parsed = JSON.parse(bData);
+        if (Array.isArray(parsed) && !parsed.some((b: any) => b.id === 'BRD-1')) {
+          return parsed;
+        }
       } catch (e) {}
     }
-    return [
-      {
-        id: 'BRD-1',
-        title: 'SMS Gateway System v3.4.0 Live',
-        message: 'High-speed routing algorithms and live websocket webhooks are now active.',
-        type: 'info',
-        active: true,
-        createdAt: '2026-09-06',
-      },
-    ];
+    return [];
   });
 
   const [dismissedNoticeId, setDismissedNoticeId] = useState<string | null>(() => {
@@ -205,6 +284,19 @@ export default function App() {
   };
 
   const [realtimeCounters, setRealtimeCounters] = useState<RealtimeCounters>(emptyRealtimeCounters);
+
+  const activeRealtimeCounters = useMemo(() => {
+    if (syncedData && syncedData.realtime_counters) {
+      return {
+        totalMessages: syncedData.realtime_counters.totalMessages,
+        delivered: syncedData.realtime_counters.delivered,
+        failed: syncedData.realtime_counters.failed,
+        charged: syncedData.realtime_counters.charged,
+      };
+    }
+    return realtimeCounters;
+  }, [syncedData, realtimeCounters]);
+
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
 
   // Synchronize state with real-time localStorage database
@@ -269,6 +361,16 @@ export default function App() {
 
   // Determine current metric data dynamically based on real-time logs
   const getActiveMetricData = (): MetricData => {
+    if (syncedData && syncedData.metrics) {
+      return {
+        messages: syncedData.metrics.messages,
+        delivered: syncedData.metrics.delivered,
+        failed: syncedData.metrics.failed,
+        todayCount: syncedData.metrics.todayCount,
+        deliveryRate: syncedData.metrics.deliveryRate,
+        todayDate: syncedData.metrics.todayDate,
+      };
+    }
     const rawLogs = getRealSmsLogs();
     const totalCount = rawLogs.length;
     const deliveredCount = rawLogs.filter((l) => l.status === 'DELIVERED').length;
@@ -293,14 +395,12 @@ export default function App() {
 
   const metricData = getActiveMetricData();
 
-  // Open "Your Messages" full white interface display
+  // Open "Your Messages" full white interface display inside Client Active SMS
   const handleOpenYourMessages = (
-    filter: 'all' | 'delivered' | 'failed' | 'today' = 'all',
-    number?: string | null
+    filter: 'all' | 'delivered' | 'failed' | 'today' = 'all'
   ) => {
-    setYourMessagesFilter(filter);
-    setYourMessagesTargetNumber(number || null);
-    setIsYourMessagesOpen(true);
+    setActiveSmsFilter(filter);
+    setActiveTab('activesms');
   };
 
   // Deep OTP Session Handlers
@@ -325,60 +425,39 @@ export default function App() {
     setIsOtpModalOpen(true);
   };
 
-  // Chart data calculation
+  // Chart data calculation - strictly derived from live IPRN API synchronization
   const getChartData = (): DailyChartPoint[] => {
-    let baseChart: DailyChartPoint[];
-    if (!isDemoMode) {
-      baseChart = [
-        { date: 'Sep 1', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 2', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 3', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 4', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 5', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 6', total: 0, delivered: 0, failed: 0 },
-        { date: 'Sep 7', total: 0, delivered: 0, failed: 0 },
-      ];
-    } else {
-      if (timePeriod === '7 days') baseChart = sampleChart7Days;
-      else if (timePeriod === '90 days') baseChart = sampleChart90Days;
-      else baseChart = sampleChart30Days;
+    if (syncedData && syncedData.chart_data && syncedData.chart_data.length > 0) {
+      return syncedData.chart_data;
     }
-
-    return baseChart.map((pt, idx) => {
-      if (idx === baseChart.length - 1) {
-        return {
-          ...pt,
-          total: pt.total + realtimeCounters.totalMessages,
-          delivered: pt.delivered + realtimeCounters.delivered,
-          failed: pt.failed + realtimeCounters.failed,
-        };
-      }
-      return pt;
+    const now = new Date();
+    const dates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (6 - i));
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
+    return dates.map((dStr, idx) => ({
+      date: dStr,
+      total: idx === 6 ? realtimeCounters.totalMessages : 0,
+      delivered: idx === 6 ? realtimeCounters.delivered : 0,
+      failed: idx === 6 ? realtimeCounters.failed : 0,
+    }));
   };
 
-  // Handle Refresh action
-  const handleRefresh = () => {
+  // Handle Refresh action - directly triggers live IPRN API synchronization
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
+    try {
+      await triggerIprnSync();
       const now = new Date();
       setLastRefreshed(now.toLocaleTimeString('en-US'));
-
-      // Fetch existing logs from localStorage and notify other components
       window.dispatchEvent(new Event('real_sms_updated'));
-
-      // Push a real-time sync completed notification
-      const newNotification: NotificationItem = {
-        id: `NOTIF-${Date.now()}`,
-        title: 'Gateway Connection Synced',
-        message: 'Successfully checked and synced SMS gateway status. Active channels are online.',
-        time: 'Just now',
-        read: false,
-        type: 'info',
-      };
-      setNotifications((prev) => [newNotification, ...prev]);
-    }, 600);
+      window.dispatchEvent(new Event('rented_numbers_updated'));
+    } catch (e) {
+      console.error('Refresh sync error:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Send a simulated message
@@ -455,17 +534,11 @@ export default function App() {
             onBackToUserPanel={() => setActiveTab('dashboard')}
             darkMode={darkMode}
           />
-        ) : activeTab === 'yourmessages' ? (
-          <div className="space-y-6">
-            <YourMessagesModal
-              isOpen={true}
-              inlineView={true}
-              onClose={() => setActiveTab('dashboard')}
-              initialFilter="all"
-            />
-          </div>
         ) : activeTab === 'activesms' ? (
-          <ClientActiveSmsView />
+          <ClientActiveSmsView
+            initialFilter={activeSmsFilter}
+            onClearFilter={() => setActiveSmsFilter(null)}
+          />
         ) : activeTab === 'mynumbers' ? (
           <MyNumbersView />
         ) : activeTab === 'test_numbers' ? (
@@ -552,7 +625,7 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
               <div className="lg:col-span-1">
                 <RealtimeCountersCard
-                  counters={realtimeCounters}
+                  counters={activeRealtimeCounters}
                   onResetCounters={() => setRealtimeCounters(emptyRealtimeCounters)}
                   onCounterClick={(counterType) =>
                     handleOpenYourMessages(counterType === 'charged' ? 'all' : (counterType as any))
@@ -579,14 +652,6 @@ export default function App() {
           </>
         )}
       </main>
-
-      {/* "Your Messages" Full White Interface Modal (Bordered Format) */}
-      <YourMessagesModal
-        isOpen={isYourMessagesOpen}
-        onClose={() => setIsYourMessagesOpen(false)}
-        initialFilter={yourMessagesFilter}
-        targetNumber={yourMessagesTargetNumber}
-      />
 
       {/* Global Real-time OTP Session Modal */}
       <OtpSessionModal

@@ -16,7 +16,7 @@ import {
   Eye,
   Zap,
 } from 'lucide-react';
-import { ensureDefaultTestNumbers, dispatchIncomingOtp } from '../utils/realtimeSmsService';
+import { ensureDefaultTestNumbers } from '../utils/realtimeSmsService';
 import { OtpSessionModal } from './OtpSessionModal';
 import { RentedNumber, RealSmsLog } from '../types';
 
@@ -30,9 +30,34 @@ interface TestNumberItem {
 }
 
 export const TestNumbersView: React.FC = () => {
-  const [testNumbersData] = useState<TestNumberItem[]>(() => {
+  const [testNumbersData, setTestNumbersData] = useState<TestNumberItem[]>(() => {
     return ensureDefaultTestNumbers();
   });
+
+  useEffect(() => {
+    const fetchLiveNumbers = async () => {
+      try {
+        const res = await fetch('/api/my-numbers');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
+            const mapped: TestNumberItem[] = data.numbers.map((n: any) => ({
+              id: n.id,
+              name: n.rangeName || n.term || n.range,
+              code: n.number.startsWith('+') ? n.number.substring(1, 4) : n.number.substring(0, 3),
+              number: n.number,
+              rate: n.cost || n.rate || '0.0096 USD',
+              flag: (n.country === 'Azerbaijan' || (n.rangeName && n.rangeName.includes('Azerbaijan'))) ? '🇦🇿' : (n.country === 'Cambodia' || (n.rangeName && n.rangeName.includes('Cambodia'))) ? '🇰🇭' : n.country === 'Ecuador' ? '🇪🇨' : n.country === 'Benin' ? '🇧🇯' : n.country === 'Bolivia' ? '🇧🇴' : n.country === 'Bangladesh' ? '🇧🇩' : n.country === 'United Kingdom' ? '🇬🇧' : n.country === 'Algeria' ? '🇩🇿' : '🌐'
+            }));
+            setTestNumbersData(mapped);
+          }
+        }
+      } catch (e) {}
+    };
+    fetchLiveNumbers();
+    window.addEventListener('rented_numbers_updated', fetchLiveNumbers);
+    return () => window.removeEventListener('rented_numbers_updated', fetchLiveNumbers);
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -116,8 +141,8 @@ export const TestNumbersView: React.FC = () => {
     }
   };
 
-  // Add numbers to "My Numbers" local storage
-  const handleConfirmAndAdd = () => {
+  // Add numbers to "My Numbers" local storage and sync with IPRN API immediately
+  const handleConfirmAndAdd = async () => {
     if (!selectedItem) return;
 
     // Load existing numbers from local storage
@@ -171,6 +196,17 @@ export const TestNumbersView: React.FC = () => {
         multiLimit: 'No Limit',
         sidDidLimit: 'No Limit',
       });
+    }
+
+    // Immediately synchronize associated ranges with IPRN API
+    try {
+      await fetch('/api/my-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newNumbers })
+      });
+    } catch (e) {
+      console.warn('Backend IPRN range sync notice:', e);
     }
 
     // Save back to local storage and dispatch update event

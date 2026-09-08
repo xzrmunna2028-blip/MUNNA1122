@@ -37,8 +37,20 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | 'delivered' | 'failed' | 'today'>(initialFilter);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Sync logs from storage
-  const syncLogs = () => {
+  // Sync logs from API and local state
+  const syncLogs = async () => {
+    try {
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          setLogs(data.logs);
+          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
+          return;
+        }
+      }
+    } catch (e) {}
+
     const rawLogs = getRealSmsLogs();
     setLogs(rawLogs);
   };
@@ -54,8 +66,13 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
     };
 
     window.addEventListener('real_sms_updated', handleUpdate);
+    const interval = setInterval(() => {
+      if (isOpen) syncLogs();
+    }, 10000);
+
     return () => {
       window.removeEventListener('real_sms_updated', handleUpdate);
+      clearInterval(interval);
     };
   }, [isOpen, initialFilter]);
 
@@ -195,7 +212,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={handleExportCsv}
+              onClick={handleExport}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition cursor-pointer"
               title="Export visible messages as CSV"
             >
@@ -203,7 +220,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
               <span className="hidden sm:inline">Export</span>
             </button>
             <button
-              onClick={handleClearAll}
+              onClick={handleClearLogs}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-rose-50 text-xs font-bold text-rose-600 transition cursor-pointer"
               title="Clear all messages"
             >
@@ -350,7 +367,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
                         </span>
                       </div>
                       <button
-                        onClick={() => handleCopyOtp(log.id, log.otp!)}
+                        onClick={() => handleCopy(log.otp!, log.id)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lime-600 hover:bg-lime-700 text-white text-xs font-bold shadow-xs active:scale-95 transition cursor-pointer"
                       >
                         {copiedId === log.id ? (

@@ -98,19 +98,34 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle trigger live OTP on this number
-  const handleTriggerLiveOtp = () => {
+  // Handle trigger live OTP on this number via real-time Python IPRN sync
+  const handleTriggerLiveOtp = async () => {
     setIsReceivingOtp(true);
-    setTimeout(() => {
-      const newLog = dispatchIncomingOtp({
-        targetNumber: selectedNumber?.number || selectedLog?.number,
-        targetRoute: selectedNumber?.range || selectedLog?.termination,
-      });
-      setIsReceivingOtp(false);
-      // Auto open deep OTP session for the newly received OTP!
-      setSelectedLog(newLog);
-      setSessionLevel(2);
-    }, 600);
+    try {
+      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && json.data.active_sms_logs && json.data.active_sms_logs.length > 0) {
+          const latestLog = json.data.active_sms_logs[0];
+          localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
+          window.dispatchEvent(new Event('real_sms_updated'));
+          setSelectedLog(latestLog);
+          setSessionLevel(2);
+          setIsReceivingOtp(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Live API sync trigger error:', e);
+    }
+
+    const newLog = dispatchIncomingOtp({
+      targetNumber: selectedNumber?.number || selectedLog?.number,
+      targetRoute: selectedNumber?.range || selectedLog?.termination,
+    });
+    setIsReceivingOtp(false);
+    setSelectedLog(newLog);
+    setSessionLevel(2);
   };
 
   // Copy helpers

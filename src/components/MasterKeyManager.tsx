@@ -84,6 +84,60 @@ export interface MasterKeyPreset {
 // Built-in intelligent Master Gateway profiles with pre-programmed rules & full payload bundles
 export const BUILT_IN_MASTER_PRESETS: MasterKeyPreset[] = [
   {
+    id: 'MK-IPRN-LIVE-PRO',
+    name: 'IPRN Production Master Live Gateway',
+    key: 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z',
+    description: 'Direct live synchronization with IPRN API endpoints. Real-time active SMS feeds, allocated numbers, and dynamic delivery counters.',
+    provider: 'IPRN Carrier Network Live',
+    routesCount: 15,
+    numbersCount: 5,
+    smsCount: 25,
+    autoSync: true,
+    data: {
+      numbers: [
+        {
+          id: 'NUM-LIVE-001',
+          number: '213673859086',
+          range: '213673XXXXX',
+          operator: 'Algeria - Mobilis 101',
+          status: 'ACTIVE',
+          cost: '$0.0000 / SMS',
+          expiry: '2026-12-31',
+          term: 'Algeria - Mobilis 101',
+          portalLimit: '10,000/day',
+          sidRange: 'KsiSms',
+          multiLimit: '5,000',
+          sidDidLimit: 'Unlimited'
+        },
+        {
+          id: 'NUM-LIVE-002',
+          number: '8801723849583',
+          range: '8801723XXXXX',
+          operator: 'Bangladesh - Grameenphone VIP Route',
+          status: 'ACTIVE',
+          cost: '$0.0000 / SMS',
+          expiry: '2026-12-31',
+          term: 'Bangladesh - Grameenphone',
+          portalLimit: '8,000/day',
+          sidRange: 'AuthVerify',
+          multiLimit: '4,000',
+          sidDidLimit: 'Unlimited'
+        }
+      ],
+      testSms: [],
+      smsRecords: [],
+      sidWatches: [
+        {
+          id: 'SW-1',
+          sid: 'AuthVerify',
+          country: 'Bangladesh',
+          dateAdded: '2026-09-01',
+          active: true
+        }
+      ]
+    }
+  },
+  {
     id: 'MK-GLOBAL-PRO',
     name: 'Global Tier-1 SMS Gateway (Enterprise Master)',
     key: 'CF_MASTER_GLOBAL_TIER1_2026_PRO_KEY',

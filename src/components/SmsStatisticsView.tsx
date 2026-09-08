@@ -157,95 +157,71 @@ export const SmsStatisticsView: React.FC = () => {
   const [hasApplied, setHasApplied] = useState(false);
   const [showFailedLogs, setShowFailedLogs] = useState(false);
 
-  // Real SMS Logs from LocalStorage
+  // Real SMS Logs from IPRN API & LocalStorage
   const [realSmsLogs, setRealSmsLogs] = useState<SmsLog[]>([]);
+  const [isApiSyncing, setIsApiSyncing] = useState(false);
+  const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  useEffect(() => {
-    const loadLogs = () => {
-      const existing = localStorage.getItem('real_sms_logs');
-      if (existing) {
-        setRealSmsLogs(JSON.parse(existing));
-      } else {
-        setRealSmsLogs([]);
+  const fetchStatsFromApi = async () => {
+    try {
+      const res = await fetch('/api/statistics');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          setRealSmsLogs(data.logs);
+          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
+          if (data.last_updated) {
+            setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
+          }
+          return;
+        }
       }
-    };
-    loadLogs();
-
-    window.addEventListener('storage', loadLogs);
-    window.addEventListener('real_sms_updated', loadLogs);
-    return () => {
-      window.removeEventListener('storage', loadLogs);
-      window.removeEventListener('real_sms_updated', loadLogs);
-    };
-  }, []);
-
-  // Quick helper to simulate real gateway inflow directly in stats view on demand
-  const handleSimulateInflow = () => {
-    const baseDate = new Date();
-    const routes = [
-      'Bangladesh - Grameenphone',
-      'United Kingdom - Vodafone',
-      'Algeria - Mobilis 101',
-      'Azerbaijan - Bakcell 3'
-    ];
-    const numbers = [
-      '8801723849583',
-      '447385293847',
-      '213673859086',
-      '994997780131'
-    ];
-    const sids = ['KsiSms', 'AuthVerify', 'GPAlert', 'QuickOTP'];
-    
-    // Generate 5 realistic SMS records within the active date range
-    const newLogs: SmsLog[] = [
-      {
-        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 5).toISOString(), // 5 mins ago
-        status: 'DELIVERED',
-        termination: routes[0],
-        number: numbers[0],
-        sid: sids[0]
-      },
-      {
-        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-        status: 'DELIVERED',
-        termination: routes[1],
-        number: numbers[1],
-        sid: sids[1]
-      },
-      {
-        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 12).toISOString(), // 12 hours ago
-        status: 'FAILED',
-        termination: routes[2],
-        number: numbers[2],
-        sid: sids[1]
-      },
-      {
-        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days ago
-        status: 'DELIVERED',
-        termination: routes[3],
-        number: numbers[3],
-        sid: sids[3]
-      },
-      {
-        timestamp: new Date(baseDate.getTime() - 1000 * 60 * 60 * 24 * 5).toISOString(), // 5 days ago
-        status: 'DELIVERED',
-        termination: routes[0],
-        number: numbers[0],
-        sid: sids[2]
-      }
-    ];
+    } catch (e) {
+      console.warn('Failed to fetch statistics from backend API:', e);
+    }
 
     const existing = localStorage.getItem('real_sms_logs');
-    const parsed = existing ? JSON.parse(existing) : [];
-    const updated = [...newLogs, ...parsed];
-    localStorage.setItem('real_sms_logs', JSON.stringify(updated));
-    
-    // Notify all components of real-time update
-    window.dispatchEvent(new Event('real_sms_updated'));
-    
-    // Auto-apply filters to instantly show the new simulated records
-    setHasApplied(true);
+    if (existing) {
+      try {
+        setRealSmsLogs(JSON.parse(existing));
+      } catch (e) {
+        setRealSmsLogs([]);
+      }
+    } else {
+      setRealSmsLogs([]);
+    }
   };
+
+  const handleSyncWithIprn = async () => {
+    setIsApiSyncing(true);
+    try {
+      await fetch('/api/trigger-sync', { method: 'POST' });
+      await fetchStatsFromApi();
+    } catch (e) {
+      console.error('IPRN API trigger-sync error:', e);
+    } finally {
+      setIsApiSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatsFromApi();
+
+    const handleSync = () => fetchStatsFromApi();
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('real_sms_updated', handleSync);
+    
+    // Auto-poll live statistics every 15 seconds
+    const interval = setInterval(() => {
+      fetchStatsFromApi();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('real_sms_updated', handleSync);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Picker Modal state
   const [activePicker, setActivePicker] = useState<'from' | 'to' | 'none'>('none');
@@ -511,6 +487,15 @@ export const SmsStatisticsView: React.FC = () => {
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Reset</span>
+            </button>
+            <button
+              onClick={handleSyncWithIprn}
+              disabled={isApiSyncing}
+              title="Synchronize real-time stats directly with IPRN API"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isApiSyncing ? 'animate-spin' : ''}`} />
+              <span>{isApiSyncing ? 'Syncing...' : 'Sync IPRN API'}</span>
             </button>
           </div>
         </div>

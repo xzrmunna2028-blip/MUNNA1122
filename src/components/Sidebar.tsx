@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [copiedAccountCode, setCopiedAccountCode] = useState<boolean>(false);
 
   const accountCode = '8492019384'; // 10-digit Active Account Code
-  const apiKey = 'cf_live_9a87f21b4e9812ad'; // Unique API Key per user
+  const apiKey = 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z'; // Live IPRN Production API Key
 
   const handleCopyKey = () => {
     navigator.clipboard.writeText(apiKey);
@@ -88,7 +88,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'CLIENT SYSTEM',
       items: [
-        { id: 'yourmessages', label: 'Your Messages', icon: Mail, badge: 'LIVE' },
         { id: 'activesms', label: 'Client Active SMS', icon: MessageSquare },
         { id: 'mynumbers', label: 'My Numbers', icon: Hash },
         { id: 'statistics', label: 'My SMS Statistics', icon: BarChart3 },
@@ -259,6 +258,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Sidebar Footer with Quick Links */}
         <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/80 space-y-2.5">
+          {/* IPRN Live API Key Status Card */}
+          <div className="p-3 rounded-xl bg-slate-900/90 border border-sky-500/30 text-xs">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-sky-400">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                IPRN API Live
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Auto-Sync</span>
+            </div>
+            <div className="flex items-center justify-between gap-1 text-[11px] font-mono text-slate-300 bg-slate-950/70 px-2 py-1 rounded-lg border border-slate-800">
+              <span className="truncate">sk_live_...dz2Z</span>
+              <button
+                onClick={handleCopyKey}
+                title="Copy IPRN Live API Key"
+                className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+              >
+                {copiedApiKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
           {/* Telegram Action */}
           <a
             href="https://t.me/super_x_sms_s"
