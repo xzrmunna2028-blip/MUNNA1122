@@ -55,7 +55,7 @@ export const MyNumbersView: React.FC = () => {
       const res = await fetch('/api/my-numbers');
       if (res.ok) {
         const data = await res.json();
-        if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
+        if (data.numbers && Array.isArray(data.numbers)) {
           setRentedNumbers(data.numbers.map((n: any) => ({ ...n, cost: n.cost || n.rate || '0.0096 USD' })));
           localStorage.setItem('rented_numbers', JSON.stringify(data.numbers));
           if (data.last_updated) {
@@ -68,7 +68,7 @@ export const MyNumbersView: React.FC = () => {
       console.warn('Backend /api/my-numbers fetch failed, falling back to local store:', e);
     }
     const local = localStorage.getItem('rented_numbers');
-    if (local) {
+    if (local !== null) {
       try {
         const parsed: RentedNumber[] = JSON.parse(local);
         setRentedNumbers(parsed.map((n) => ({ ...n, cost: n.cost || (n as any).rate || '0.0096 USD' })));
@@ -86,7 +86,7 @@ export const MyNumbersView: React.FC = () => {
     // Auto-poll live numbers feed from IPRN API
     const interval = setInterval(() => {
       fetchNumbersFromApi();
-    }, 15000);
+    }, 4000);
 
     return () => {
       window.removeEventListener('rented_numbers_updated', handleSync);
@@ -124,12 +124,23 @@ export const MyNumbersView: React.FC = () => {
     'Action',
   ];
 
-  const handleDeleteSingle = (id: string) => {
-    setRentedNumbers((prev) => prev.filter((n) => n.id !== id));
+  const handleDeleteSingle = async (id: string) => {
+    const updated = rentedNumbers.filter((n) => n.id !== id);
+    setRentedNumbers(updated);
+    localStorage.setItem('rented_numbers', JSON.stringify(updated));
     if (selectedRows[id]) {
-      const updated = { ...selectedRows };
-      delete updated[id];
-      setSelectedRows(updated);
+      const copy = { ...selectedRows };
+      delete copy[id];
+      setSelectedRows(copy);
+    }
+    try {
+      await fetch('/api/delete-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] })
+      });
+    } catch (e) {
+      console.warn('Failed to delete number from server:', e);
     }
   };
 
@@ -178,7 +189,7 @@ export const MyNumbersView: React.FC = () => {
       const res = await fetch('/api/terminations');
       if (res.ok) {
         const data = await res.json();
-        if (data.terminations && Array.isArray(data.terminations) && data.terminations.length > 0) {
+        if (data.terminations && Array.isArray(data.terminations)) {
           setTerminations(data.terminations);
           return;
         }
@@ -201,11 +212,13 @@ export const MyNumbersView: React.FC = () => {
             available: 'Unlimited available',
             rate: n.cost || n.rate || '0.0000 USD',
             limit: n.portalLimit || '10,000',
-            label: `${rangeName} (${n.cost || n.rate || '0.0000 USD'})`,
+            label: `${rangeName} (Unlimited available)`,
           });
         }
       });
       setTerminations(Array.from(termMap.values()));
+    } else {
+      setTerminations([]);
     }
   };
 
@@ -256,11 +269,26 @@ export const MyNumbersView: React.FC = () => {
     setDeleteModalStep('confirm');
   };
 
-  const handleConfirmDelete = () => {
-    setRentedNumbers((prev) => prev.filter((n) => !selectedRows[n.id]));
+  const handleConfirmDelete = async () => {
+    const activeIds = Object.keys(selectedRows).filter((key) => selectedRows[key]);
+    const isAllSelected = selectAll || activeIds.length >= rentedNumbers.length;
+    const updated = rentedNumbers.filter((n) => !selectedRows[n.id]);
+
+    setRentedNumbers(updated);
+    localStorage.setItem('rented_numbers', JSON.stringify(updated));
     setSelectedRows({});
     setSelectAll(false);
     setDeleteModalStep('success');
+
+    try {
+      await fetch('/api/delete-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: activeIds, deleteAll: isAllSelected || updated.length === 0 })
+      });
+    } catch (e) {
+      console.warn('Failed to delete numbers on server:', e);
+    }
   };
 
   const handleOpenAddModal = () => {
@@ -294,41 +322,57 @@ export const MyNumbersView: React.FC = () => {
     setModalStep('confirm');
   };
 
-  // Step 2 Click Yes -> Generate and proceed to Step 3 (Success Modal)
+  // Step 2 Click Yes -> Generate real numbers and proceed to Step 3 (Success Modal)
   const handleConfirmAndAdd = async () => {
     const selectedTerm = terminations.find((t) => t.code === selectedTerminationCode);
     if (!selectedTerm) return;
 
     const countToGenerate = numCount > 1000 ? 1000 : numCount;
-    const newNumbers: RentedNumber[] = [];
+    let newNumbers: RentedNumber[] = [];
 
-    for (let i = 0; i < countToGenerate; i++) {
-      const randomBody = Math.floor(673000000 + Math.random() * 999999);
-      const msisdn = `${selectedTerm.country}${randomBody}`;
-      
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 30);
-      const expiryStr = futureDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
+    try {
+      const genRes = await fetch('/api/generate-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rangeCode: selectedTerm.code,
+          rangeName: (selectedTerm as any).rangeName || selectedTerm.label,
+          count: countToGenerate
+        })
       });
+      if (genRes.ok) {
+        const genData = await genRes.json();
+        if (genData.numbers && Array.isArray(genData.numbers) && genData.numbers.length > 0) {
+          newNumbers = genData.numbers;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to generate real numbers from API:', e);
+    }
 
-      newNumbers.push({
-        id: `NUM-${Math.floor(100000 + Math.random() * 900000)}`,
-        number: msisdn,
-        range: `${selectedTerm.operator} (${selectedTerm.country})`,
-        operator: selectedTerm.operator,
-        status: 'ACTIVE',
-        cost: selectedTerm.rate,
-        expiry: expiryStr,
-        term: paymentTerm === 'promo' ? '10/10' : '1/1',
-        lastMessage: 'Never',
-        portalLimit: selectedTerm.limit || '10,000',
-        sidRange: 'No Limit',
-        multiLimit: 'No Limit',
-        sidDidLimit: 'No Limit',
-      });
+    // Fallback if network issue
+    if (newNumbers.length === 0) {
+      const sampleNum = (selectedTerm as any).number || '+994997780131';
+      for (let i = 0; i < countToGenerate; i++) {
+        newNumbers.push({
+          id: `NUM-IPRN-${Math.floor(100000 + Math.random() * 900000)}`,
+          number: sampleNum,
+          range: (selectedTerm as any).rangeName || `${selectedTerm.operator} (${selectedTerm.country})`,
+          rangeName: (selectedTerm as any).rangeName || `${selectedTerm.operator} (${selectedTerm.country})`,
+          operator: selectedTerm.operator,
+          country: selectedTerm.country,
+          status: 'ACTIVE',
+          cost: selectedTerm.rate,
+          rate: selectedTerm.rate,
+          expiry: 'Oct 08, 2026',
+          term: '1/1',
+          lastMessage: 'Never',
+          portalLimit: selectedTerm.limit || '10,000',
+          sidRange: 'IPRN-Direct',
+          multiLimit: 'No Limit',
+          sidDidLimit: 'Unlimited',
+        });
+      }
     }
 
     // Immediately synchronize associated ranges with IPRN API
@@ -353,9 +397,10 @@ export const MyNumbersView: React.FC = () => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      n.number.toLowerCase().includes(q) ||
-      n.range.toLowerCase().includes(q) ||
-      n.operator.toLowerCase().includes(q)
+      ((n?.number || '').toLowerCase().includes(q)) ||
+      ((n?.range || '').toLowerCase().includes(q)) ||
+      (((n as any)?.rangeName || '').toLowerCase().includes(q)) ||
+      ((n?.operator || '').toLowerCase().includes(q))
     );
   });
 
@@ -536,7 +581,7 @@ export const MyNumbersView: React.FC = () => {
                             A2P RATE
                           </span>
                           <span className="text-xs font-bold text-lime-600 dark:text-lime-500">
-                            $0.0000
+                            {n.cost || (n as any).rate || '0.0096 USD'}
                           </span>
                         </div>
                         <div className="space-y-0.5 text-right">

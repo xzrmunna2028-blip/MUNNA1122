@@ -82,11 +82,15 @@ export default function App() {
           const d = new Date(json.last_updated);
           setLastSyncTime(d.toLocaleTimeString('en-US'));
         }
-        if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && json.active_sms_logs.length > 0) {
+        if (json.metrics) {
+          if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+          if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+        }
+        if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
           localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
           window.dispatchEvent(new Event('real_sms_updated'));
         }
-        if (json.rented_numbers && Array.isArray(json.rented_numbers) && json.rented_numbers.length > 0) {
+        if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
           localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
           window.dispatchEvent(new Event('rented_numbers_updated'));
         }
@@ -109,6 +113,10 @@ export default function App() {
           if (json.data.last_updated) {
             const d = new Date(json.data.last_updated);
             setLastSyncTime(d.toLocaleTimeString('en-US'));
+          }
+          if (json.data.metrics) {
+            if (json.data.metrics.messages) localStorage.setItem('total_messages_stat', json.data.metrics.messages.toString());
+            if (json.data.metrics.totalRanges) localStorage.setItem('ranges_stat', json.data.metrics.totalRanges.toString());
           }
           if (json.data.active_sms_logs && Array.isArray(json.data.active_sms_logs)) {
             localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
@@ -139,11 +147,50 @@ export default function App() {
 
   useEffect(() => {
     fetchIprnMetrics();
-    // Poll for real-time synchronization every 10 seconds
+
+    // Setup SSE connection for instant real-time synchronization across all sessions
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onmessage = (event) => {
+        try {
+          const json = JSON.parse(event.data);
+          if (json) {
+            setSyncedData(json);
+            if (json.last_updated) {
+              const d = new Date(json.last_updated);
+              setLastSyncTime(d.toLocaleTimeString('en-US'));
+            }
+            if (json.metrics) {
+              if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+              if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+            }
+            if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && json.active_sms_logs.length > 0) {
+              localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+              window.dispatchEvent(new Event('real_sms_updated'));
+            }
+            if (json.rented_numbers && Array.isArray(json.rented_numbers) && json.rented_numbers.length > 0) {
+              localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+              window.dispatchEvent(new Event('rented_numbers_updated'));
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing SSE stream message:', e);
+        }
+      };
+    } catch (e) {
+      console.warn('EventSource SSE connection fallback:', e);
+    }
+
+    // Poll for real-time synchronization every 4 seconds as fallback
     const interval = setInterval(() => {
       fetchIprnMetrics();
-    }, 10000);
-    return () => clearInterval(interval);
+    }, 4000);
+
+    return () => {
+      if (eventSource) eventSource.close();
+      clearInterval(interval);
+    };
   }, []);
 
   // Deep OTP Session Modal State
@@ -151,15 +198,14 @@ export default function App() {
   const [modalInitialNumber, setModalInitialNumber] = useState<RentedNumber | null>(null);
   const [modalInitialLog, setModalInitialLog] = useState<RealSmsLog | null>(null);
 
-  // Initialize storage on mount (ensuring zero demo messages and clean rented/test numbers)
+  // Initialize storage on mount (ensuring clean rented/test numbers)
   useEffect(() => {
     initRealtimeSmsStore();
     ensureDefaultRentedNumbers();
     ensureDefaultTestNumbers();
 
-    // Purge any legacy demo broadcast announcements or notifications and zero out demo logs
+    // Purge any legacy demo broadcast announcements or notifications
     try {
-      localStorage.setItem('real_sms_logs', JSON.stringify([]));
       const bData = localStorage.getItem('codeflow_broadcasts');
       if (bData && (bData.includes('BRD-1') || bData.includes('SMS Gateway System v3.4.0 Live'))) {
         localStorage.removeItem('codeflow_broadcasts');
@@ -286,30 +332,31 @@ export default function App() {
   const [realtimeCounters, setRealtimeCounters] = useState<RealtimeCounters>(emptyRealtimeCounters);
 
   const activeRealtimeCounters = useMemo(() => {
-    if (syncedData && syncedData.realtime_counters) {
-      return {
-        totalMessages: syncedData.realtime_counters.totalMessages,
-        delivered: syncedData.realtime_counters.delivered,
-        failed: syncedData.realtime_counters.failed,
-        charged: syncedData.realtime_counters.charged,
-      };
-    }
-    return realtimeCounters;
+    const rawLogs = getRealSmsLogs();
+    const backendCounters = syncedData?.realtime_counters;
+    const total = Math.max(rawLogs.length, backendCounters?.totalMessages || 0, realtimeCounters.totalMessages);
+    const delivered = Math.max(
+      rawLogs.filter(l => l.status === 'DELIVERED').length,
+      backendCounters?.delivered || 0,
+      realtimeCounters.delivered
+    );
+    const failed = Math.max(
+      rawLogs.filter(l => l.status === 'FAILED').length,
+      backendCounters?.failed || 0,
+      realtimeCounters.failed
+    );
+    return {
+      totalMessages: total,
+      delivered: delivered,
+      failed: failed,
+      charged: total,
+    };
   }, [syncedData, realtimeCounters]);
 
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
 
   // Synchronize state with real-time localStorage database
   useEffect(() => {
-    // One-time cleanup to wipe out legacy mock/simulated data from previous testing runs
-    const legacyCleared = localStorage.getItem('legacy_mock_cleared_v4');
-    if (!legacyCleared) {
-      localStorage.removeItem('rented_numbers');
-      localStorage.removeItem('my_invoices_list');
-      localStorage.setItem('real_sms_logs', JSON.stringify([]));
-      localStorage.setItem('legacy_mock_cleared_v4', 'true');
-    }
-
     const syncWithLocalStorage = () => {
       const existing = localStorage.getItem('real_sms_logs');
       const logs = existing ? JSON.parse(existing) : [];
@@ -322,7 +369,7 @@ export default function App() {
         totalMessages: total,
         delivered: delivered,
         failed: failed,
-        charged: delivered,
+        charged: total,
       });
 
       // Map raw SMS logs to Dashboard MessageLog structures
@@ -334,7 +381,7 @@ export default function App() {
           status: l.status,
           type: 'OTP',
           timestamp: timePart,
-          cost: '$0.0000',
+          cost: l.cost || '0.0096 USD',
         };
       });
       setMessageLogs(mappedLogs);
@@ -359,26 +406,27 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Determine current metric data dynamically based on real-time logs
+  // Determine current metric data dynamically based on real-time logs & backend sync
   const getActiveMetricData = (): MetricData => {
-    if (syncedData && syncedData.metrics) {
-      return {
-        messages: syncedData.metrics.messages,
-        delivered: syncedData.metrics.delivered,
-        failed: syncedData.metrics.failed,
-        todayCount: syncedData.metrics.todayCount,
-        deliveryRate: syncedData.metrics.deliveryRate,
-        todayDate: syncedData.metrics.todayDate,
-      };
-    }
     const rawLogs = getRealSmsLogs();
-    const totalCount = rawLogs.length;
-    const deliveredCount = rawLogs.filter((l) => l.status === 'DELIVERED').length;
-    const failedCount = rawLogs.filter((l) => l.status === 'FAILED').length;
+    const backendLogs = (syncedData && Array.isArray(syncedData.active_sms_logs)) ? syncedData.active_sms_logs : [];
+    const combinedLogs = backendLogs.length >= rawLogs.length ? backendLogs : rawLogs;
+
+    const totalCount = Math.max(combinedLogs.length, syncedData?.metrics?.messages || 0, activeRealtimeCounters.totalMessages);
+    const deliveredCount = Math.max(
+      combinedLogs.filter((l: any) => l.status === 'DELIVERED').length,
+      syncedData?.metrics?.delivered || 0,
+      activeRealtimeCounters.delivered
+    );
+    const failedCount = Math.max(
+      combinedLogs.filter((l: any) => l.status === 'FAILED').length,
+      syncedData?.metrics?.failed || 0,
+      activeRealtimeCounters.failed
+    );
     
     // Check messages today
     const todayPrefix = new Date().toISOString().split('T')[0];
-    const todayCount = rawLogs.filter((l) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length;
+    const todayCount = combinedLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length || totalCount;
 
     const rate = totalCount > 0 ? parseFloat(((deliveredCount / totalCount) * 100).toFixed(1)) : 0;
     const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });

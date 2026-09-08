@@ -2602,31 +2602,29 @@ export const seedInitialOtpLogs = () => {
 // Ensure default rented numbers exist
 export const ensureDefaultRentedNumbers = (): RentedNumber[] => {
   const local = localStorage.getItem('rented_numbers');
-  if (local) {
+  if (local !== null) {
     try {
       const parsed: RentedNumber[] = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length >= 110) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     } catch (e) {}
   }
-  localStorage.setItem('rented_numbers', JSON.stringify(DEFAULT_RENTED_NUMBERS));
-  return DEFAULT_RENTED_NUMBERS;
+  return [];
 };
 
 // Ensure default test numbers exist
 export const ensureDefaultTestNumbers = () => {
   const local = localStorage.getItem('test_numbers');
-  if (local) {
+  if (local !== null) {
     try {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length >= 110) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     } catch (e) {}
   }
-  localStorage.setItem('test_numbers', JSON.stringify(DEFAULT_TEST_NUMBERS));
-  return DEFAULT_TEST_NUMBERS;
+  return [];
 };
 
 // Get all real SMS logs

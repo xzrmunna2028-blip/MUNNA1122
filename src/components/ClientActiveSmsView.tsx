@@ -71,7 +71,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data.logs && Array.isArray(data.logs)) {
-          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: '0.0000 USD' })));
+          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
           localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
           if (data.last_updated) {
             setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
@@ -87,7 +87,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     if (existing) {
       try {
         const parsed: SmsLog[] = JSON.parse(existing);
-        setLiveLogs(parsed.map(l => ({ ...l, cost: '0.0000 USD' })));
+        setLiveLogs(parsed.map(l => ({ ...l, cost: l.cost || '0.0096 USD' })));
         return;
       } catch (e) {}
     }
@@ -111,10 +111,10 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     const handleSync = () => loadLogs();
     window.addEventListener('real_sms_updated', handleSync);
     
-    // Auto-poll live active SMS feed every 10 seconds
+    // Auto-poll live active SMS feed every 3 seconds
     const interval = setInterval(() => {
       loadLogs();
-    }, 10000);
+    }, 3000);
 
     return () => {
       window.removeEventListener('real_sms_updated', handleSync);
@@ -153,10 +153,11 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     setInspectorModalOpen(true);
   };
 
-  // Helper to extract OTP code
+  // Helper to extract OTP code safely
   const getOtpCode = (log: SmsLog): string | null => {
     if (log.otp) return log.otp;
-    const match = log.text.match(/\b\d{4,8}\b/);
+    const text = log.text || '';
+    const match = text.match(/\b\d{4,8}\b/);
     return match ? match[0] : null;
   };
 
@@ -178,10 +179,10 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     return liveLogs.filter(log => {
       const matchesSearch = 
         !searchTerm ||
-        log.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.number.includes(searchTerm) ||
-        log.termination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.sid.toLowerCase().includes(searchTerm.toLowerCase());
+        ((log.text || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
+        ((log.number || '').includes(searchTerm)) ||
+        ((log.termination || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
+        ((log.sid || '').toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesStatus = statusFilter === 'ALL' || log.status === statusFilter;
       return matchesSearch && matchesStatus;

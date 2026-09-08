@@ -149,12 +149,24 @@ const WheelColumn: React.FC<WheelColumnProps> = ({ options, currentValue, onValu
 };
 
 export const SmsStatisticsView: React.FC = () => {
-  // Input fields state
-  const [dateFrom, setDateFrom] = useState('08/08/2026, 12:00 AM');
-  const [dateTo, setDateTo] = useState('09/07/2026, 11:59:59 PM');
+  // Input fields state - dynamically spanning last 30 days to end of today
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 12:00 AM`;
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 11:59:59 PM`;
+  });
   
-  // Applied stats state (starts as 0 as requested and shown in screenshot)
-  const [hasApplied, setHasApplied] = useState(false);
+  // Applied stats state (active by default to show live stats immediately)
+  const [hasApplied, setHasApplied] = useState(true);
   const [showFailedLogs, setShowFailedLogs] = useState(false);
 
   // Real SMS Logs from IPRN API & LocalStorage
@@ -211,10 +223,10 @@ export const SmsStatisticsView: React.FC = () => {
     window.addEventListener('storage', handleSync);
     window.addEventListener('real_sms_updated', handleSync);
     
-    // Auto-poll live statistics every 15 seconds
+    // Auto-poll live statistics every 3 seconds
     const interval = setInterval(() => {
       fetchStatsFromApi();
-    }, 15000);
+    }, 3000);
 
     return () => {
       window.removeEventListener('storage', handleSync);
@@ -337,9 +349,18 @@ export const SmsStatisticsView: React.FC = () => {
   };
 
   const handleReset = () => {
-    setHasApplied(false);
-    setDateFrom('08/08/2026, 12:00 AM');
-    setDateTo('09/07/2026, 11:59:59 PM');
+    setHasApplied(true);
+    const dFrom = new Date();
+    dFrom.setDate(dFrom.getDate() - 30);
+    const m1 = String(dFrom.getMonth() + 1).padStart(2, '0');
+    const day1 = String(dFrom.getDate()).padStart(2, '0');
+    setDateFrom(`${m1}/${day1}/${dFrom.getFullYear()}, 12:00 AM`);
+
+    const dTo = new Date();
+    dTo.setDate(dTo.getDate() + 1);
+    const m2 = String(dTo.getMonth() + 1).padStart(2, '0');
+    const day2 = String(dTo.getDate()).padStart(2, '0');
+    setDateTo(`${m2}/${day2}/${dTo.getFullYear()}, 11:59:59 PM`);
     setShowFailedLogs(false);
   };
 
@@ -349,6 +370,7 @@ export const SmsStatisticsView: React.FC = () => {
 
   const filteredLogs = realSmsLogs.filter((log) => {
     const logDate = new Date(log.timestamp);
+    if (isNaN(logDate.getTime())) return true;
     return logDate >= fromDateObj && logDate <= toDateObj;
   });
 

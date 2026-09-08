@@ -57,18 +57,18 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
   // Load logs for the selected number
   const refreshNumberLogs = () => {
     const allLogs = getRealSmsLogs();
-    if (selectedNumber) {
-      const cleanTarget = selectedNumber.number.replace(/\s+/g, '');
+    if (selectedNumber && selectedNumber.number) {
+      const cleanTarget = (selectedNumber.number || '').replace(/\s+/g, '');
       const filtered = allLogs.filter((l) => {
-        const cleanLogNum = l.number.replace(/\s+/g, '');
-        return cleanLogNum === cleanTarget || cleanLogNum.includes(cleanTarget) || cleanTarget.includes(cleanLogNum);
+        const cleanLogNum = (l?.number || '').replace(/\s+/g, '');
+        return cleanLogNum === cleanTarget || (cleanTarget && cleanLogNum.includes(cleanTarget)) || (cleanLogNum && cleanTarget.includes(cleanLogNum));
       });
       setNumberLogs(filtered);
-    } else if (selectedLog) {
-      const cleanTarget = selectedLog.number.replace(/\s+/g, '');
+    } else if (selectedLog && selectedLog.number) {
+      const cleanTarget = (selectedLog.number || '').replace(/\s+/g, '');
       const filtered = allLogs.filter((l) => {
-        const cleanLogNum = l.number.replace(/\s+/g, '');
-        return cleanLogNum === cleanTarget || cleanLogNum.includes(cleanTarget) || cleanTarget.includes(cleanLogNum);
+        const cleanLogNum = (l?.number || '').replace(/\s+/g, '');
+        return cleanLogNum === cleanTarget || (cleanTarget && cleanLogNum.includes(cleanTarget)) || (cleanLogNum && cleanTarget.includes(cleanLogNum));
       });
       setNumberLogs(filtered);
     } else {
@@ -226,7 +226,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                       </button>
                     </h2>
                     <p className="text-xs font-semibold text-slate-400 mt-1">
-                      {currentRouteStr} · Rate: <span className="text-lime-400 font-bold">$0.0000 USD (Free)</span>
+                      {currentRouteStr} · Rate: <span className="text-lime-400 font-bold">{selectedNumber?.cost || (selectedNumber as any)?.rate || '0.0096 USD'}</span>
                     </p>
                   </div>
 

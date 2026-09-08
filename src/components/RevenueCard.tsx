@@ -9,9 +9,9 @@ interface RevenueCardProps {
 export const RevenueCard: React.FC<RevenueCardProps> = ({ totalMessages }) => {
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'BDT'>('USD');
 
-  // Revenue calculation locked to 0.00 as requested because payment system is locked
+  const rateMultiplier = selectedCurrency === 'BDT' ? 1.15 : selectedCurrency === 'EUR' ? 0.0088 : 0.0096;
   const currencySymbol = selectedCurrency === 'BDT' ? '৳' : selectedCurrency === 'EUR' ? '€' : '$';
-  const estimatedRevenue = '0.00';
+  const estimatedRevenue = (totalMessages * rateMultiplier).toFixed(2);
   const hasTraffic = totalMessages > 0;
 
   return (

@@ -75,9 +75,12 @@ export interface RentedNumber {
   id: string;
   number: string;
   range: string;
+  rangeName?: string;
+  country?: string;
   operator: string;
   status: 'ACTIVE' | 'PENDING';
   cost: string;
+  rate?: string;
   expiry: string;
   term?: string;
   lastMessage?: string;

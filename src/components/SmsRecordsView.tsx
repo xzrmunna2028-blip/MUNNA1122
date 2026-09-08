@@ -37,6 +37,9 @@ interface SmsLog {
   termination: string;
   number: string;
   sid: string;
+  text?: string;
+  otp?: string;
+  brand?: string;
 }
 
 interface RentedNumber {
@@ -62,18 +65,42 @@ export const SmsRecordsView: React.FC = () => {
   // State definitions
   const [records, setRecords] = useState<SmsRecordItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>('3:56:58 AM');
+  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(() => new Date().toLocaleTimeString('en-US'));
 
-  // Filter States
-  const [filterDateFrom, setFilterDateFrom] = useState<string>('08/08/2026, 12:00 AM');
-  const [filterDateTo, setFilterDateTo] = useState<string>('09/07/2026, 11:59:59 PM');
+  // Filter States - dynamically spanning last 30 days
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 12:00 AM`;
+  });
+  const [filterDateTo, setFilterDateTo] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 11:59:59 PM`;
+  });
   const [filterSid, setFilterSid] = useState<string>('');
   const [filterPrefix, setFilterPrefix] = useState<string>('');
   const [filterRange, setFilterRange] = useState<string>('All Ranges');
 
   // Actual applied filter values
-  const [appliedDateFrom, setAppliedDateFrom] = useState<string>('08/08/2026, 12:00 AM');
-  const [appliedDateTo, setAppliedDateTo] = useState<string>('09/07/2026, 11:59:59 PM');
+  const [appliedDateFrom, setAppliedDateFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 12:00 AM`;
+  });
+  const [appliedDateTo, setAppliedDateTo] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}/${day}/${d.getFullYear()}, 11:59:59 PM`;
+  });
   const [appliedSid, setAppliedSid] = useState<string>('');
   const [appliedPrefix, setAppliedPrefix] = useState<string>('');
   const [appliedRange, setAppliedRange] = useState<string>('All Ranges');
@@ -97,11 +124,11 @@ export const SmsRecordsView: React.FC = () => {
 
   // Custom code conversion helper
   const convertCustomLog = (log: SmsLog): SmsRecordItem => {
-    const countryParts = log.termination.split(' - ');
+    const countryParts = (log.termination || '').split(' - ');
     const country = countryParts[0] || 'Unknown';
     const operator = countryParts[1] || 'Operator';
     
-    const sidLower = log.sid.toLowerCase();
+    const sidLower = (log.sid || log.brand || '').toLowerCase();
     let logoType: SmsRecordItem['logoType'] = 'letter';
     if (sidLower.includes('tiktok')) logoType = 'tiktok';
     else if (sidLower.includes('facebook')) logoType = 'facebook';
@@ -111,22 +138,24 @@ export const SmsRecordsView: React.FC = () => {
     else if (sidLower.includes('whatsapp')) logoType = 'whatsapp';
 
     const dateObj = new Date(log.timestamp);
-    const dateStr = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : '2026-09-06';
-    const timeStr = !isNaN(dateObj.getTime()) ? dateObj.toTimeString().split(' ')[0] + ' UTC' : '21:50:00 UTC';
+    const dateStr = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+    const timeStr = !isNaN(dateObj.getTime()) ? dateObj.toTimeString().split(' ')[0] + ' UTC' : new Date().toTimeString().split(' ')[0] + ' UTC';
+
+    const safeSid = log.sid || log.brand || 'Service';
+    const safeNum = log.number || '';
+    const cleanNum = safeNum.replace('+', '');
 
     return {
       timestampDate: dateStr,
       timestampTime: timeStr,
-      brand: log.sid,
+      brand: log.brand || safeSid,
       logoType,
-      logoLetter: log.sid.charAt(0).toUpperCase() || 'S',
-      logoBg: 'bg-sky-500 text-white',
-      senderId: log.sid,
-      destination: log.number,
+      senderId: safeSid,
+      destination: cleanNum,
       country,
       operator,
-      prefix: log.number.slice(0, 3) || '1',
-      message: `Your requested verification code for ${log.sid} is ${Math.floor(100000 + Math.random() * 900000)}. Proceed securely.`
+      prefix: cleanNum.slice(0, 3) || '1',
+      message: log.text || `Your requested verification code for ${safeSid} is ${log.otp || Math.floor(100000 + Math.random() * 900000)}. Proceed securely.`
     };
   };
 
@@ -135,7 +164,7 @@ export const SmsRecordsView: React.FC = () => {
       const res = await fetch('/api/active-sms');
       if (res.ok) {
         const data = await res.json();
-        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+        if (data.logs && Array.isArray(data.logs)) {
           const customItems = (data.logs as SmsLog[]).map(convertCustomLog);
           setRecords(customItems);
           localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
@@ -161,7 +190,7 @@ export const SmsRecordsView: React.FC = () => {
     loadAllRecords();
     window.addEventListener('storage', loadAllRecords);
     window.addEventListener('real_sms_updated', loadAllRecords);
-    const interval = setInterval(loadAllRecords, 10000);
+    const interval = setInterval(loadAllRecords, 3000);
     return () => {
       window.removeEventListener('storage', loadAllRecords);
       window.removeEventListener('real_sms_updated', loadAllRecords);
@@ -206,16 +235,28 @@ export const SmsRecordsView: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Reset all filters to default screenshot values
+  // Reset all filters to default dynamic values
   const handleResetFilters = () => {
-    setFilterDateFrom('08/08/2026, 12:00 AM');
-    setFilterDateTo('09/07/2026, 11:59:59 PM');
+    const dFrom = new Date();
+    dFrom.setDate(dFrom.getDate() - 30);
+    const m1 = String(dFrom.getMonth() + 1).padStart(2, '0');
+    const day1 = String(dFrom.getDate()).padStart(2, '0');
+    const dateFromStr = `${m1}/${day1}/${dFrom.getFullYear()}, 12:00 AM`;
+
+    const dTo = new Date();
+    dTo.setDate(dTo.getDate() + 1);
+    const m2 = String(dTo.getMonth() + 1).padStart(2, '0');
+    const day2 = String(dTo.getDate()).padStart(2, '0');
+    const dateToStr = `${m2}/${day2}/${dTo.getFullYear()}, 11:59:59 PM`;
+
+    setFilterDateFrom(dateFromStr);
+    setFilterDateTo(dateToStr);
     setFilterSid('');
     setFilterPrefix('');
     setFilterRange('All Ranges');
 
-    setAppliedDateFrom('08/08/2026, 12:00 AM');
-    setAppliedDateTo('09/07/2026, 11:59:59 PM');
+    setAppliedDateFrom(dateFromStr);
+    setAppliedDateTo(dateToStr);
     setAppliedSid('');
     setAppliedPrefix('');
     setAppliedRange('All Ranges');

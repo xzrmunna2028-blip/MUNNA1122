@@ -104,8 +104,8 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
       const query = searchTerm.toLowerCase();
       result = result.filter(
         (l) =>
-          l.number.toLowerCase().includes(query) ||
-          l.text.toLowerCase().includes(query) ||
+          (l.number || '').toLowerCase().includes(query) ||
+          (l.text || '').toLowerCase().includes(query) ||
           (l.sid && l.sid.toLowerCase().includes(query)) ||
           (l.termination && l.termination.toLowerCase().includes(query)) ||
           (l.otp && l.otp.includes(query))
@@ -141,7 +141,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
     const rows = filteredLogs
       .map(
         (l) =>
-          `"${l.id}","${l.timestamp}","${l.status}","${l.termination}","${l.number}","${l.sid || ''}","${l.otp || ''}","${l.text.replace(/"/g, '""')}"`
+          `"${l.id}","${l.timestamp}","${l.status}","${l.termination}","${l.number}","${l.sid || ''}","${l.otp || ''}","${(l.text || '').replace(/"/g, '""')}"`
       )
       .join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });

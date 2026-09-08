@@ -6,12 +6,22 @@ import {
   Download, 
   Search, 
   Layers, 
-  Mail,
-  Wifi,
-  WifiOff
+  Mail, 
+  Radio, 
+  Plus, 
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Key,
+  Eye,
+  EyeOff,
+  Clipboard,
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 
 interface SmsLog {
+  id?: string;
   timestamp: string;
   status: 'DELIVERED' | 'FAILED';
   termination: string;
@@ -19,47 +29,139 @@ interface SmsLog {
   sid: string;
   cost?: string;
   text: string;
+  otp?: string;
 }
 
 export const LiveTestSmsView: React.FC = () => {
   // Live controls
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isLiveActive, setIsLiveActive] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
-  const [liveLogs, setLiveLogs] = useState<SmsLog[]>([]);
+
+  // API Key State
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('iprn_api_key') || '');
+  const [apiKeyInput, setApiKeyInput] = useState<string>(() => localStorage.getItem('iprn_api_key') || '');
+  const [isKeyVisible, setIsKeyVisible] = useState(false);
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [keySaveMessage, setKeySaveMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const [liveLogs, setLiveLogs] = useState<SmsLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('real_sms_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((log: any) => {
+            if (!log || typeof log !== 'object') return false;
+            const id = String(log.id || '');
+            return !id.startsWith('MSG-LIVE-') && !id.startsWith('MSG-MOCK-') && !id.startsWith('MSG-DEMO-') && !id.startsWith('MSG-SIM-');
+          });
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
   const [isConnected, setIsConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [activeRangesCount, setActiveRangesCount] = useState<number>(0);
-  const prevCountRef = useRef(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Dynamic live gateway routes matching user platform design & API numbers
-  const [routes, setRoutes] = useState([
-    { name: 'Azerbaijan - Bakcell 3', prefix: '+994', defaultNum: '994997780131', cost: '0.0096 USD', flag: 'AZ' },
-    { name: 'Cambodia 860', prefix: '+855', defaultNum: '85586012345', cost: '0.0096 USD', flag: 'KH' },
-    { name: 'Ecuador - CNT 10', prefix: '+593', defaultNum: '593996993564', cost: '0.0096 USD', flag: 'EC' },
-    { name: 'Benin - Celtiis 102', prefix: '+229', defaultNum: '2290145205298', cost: '0.0096 USD', flag: 'BJ' },
-    { name: 'Bolivia - Orange', prefix: '+591', defaultNum: '59171234567', cost: '0.0096 USD', flag: 'BO' },
-    { name: 'Bangladesh - Grameenphone', prefix: '+880', defaultNum: '8801723849583', cost: '0.0096 USD', flag: 'BD' },
-    { name: 'United Kingdom - Vodafone', prefix: '+44', defaultNum: '447385293847', cost: '0.0096 USD', flag: 'GB' },
-    { name: 'Algeria - Mobilis 101', prefix: '+213', defaultNum: '213673859086', cost: '0.0096 USD', flag: 'DZ' },
-  ]);
+  // Dynamic real-time counters
+  const [totalMessagesStat, setTotalMessagesStat] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('total_messages_stat');
+      return val ? parseInt(val, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [rangesStat, setRangesStat] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('ranges_stat');
+      return val ? parseInt(val, 10) : 110;
+    } catch {
+      return 110;
+    }
+  });
 
-  // Sound generator
+  const prevFirstIdRef = useRef<string>('');
+
+  // Fetch active server API key on mount
+  useEffect(() => {
+    const fetchKey = async () => {
+      try {
+        const res = await fetch('/api/get-api-key');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.apiKey) {
+            setApiKey(data.apiKey);
+            setApiKeyInput(data.apiKey);
+            localStorage.setItem('iprn_api_key', data.apiKey);
+          }
+        }
+      } catch (e) {}
+    };
+    fetchKey();
+  }, []);
+
+  const handleSaveApiKey = async () => {
+    if (!apiKeyInput.trim()) {
+      setKeySaveMessage({ text: 'Please enter or paste a valid API key.', type: 'error' });
+      return;
+    }
+    setIsSavingKey(true);
+    setKeySaveMessage(null);
+    try {
+      const res = await fetch('/api/set-api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKeyInput.trim() })
+      });
+      if (res.ok) {
+        setApiKey(apiKeyInput.trim());
+        localStorage.setItem('iprn_api_key', apiKeyInput.trim());
+        setKeySaveMessage({ text: 'API Key saved! Live real-time SMS stream connected.', type: 'success' });
+        fetchLatestData();
+      } else {
+        const errData = await res.json();
+        setKeySaveMessage({ text: errData.message || 'Failed to update API key.', type: 'error' });
+      }
+    } catch (e) {
+      setKeySaveMessage({ text: 'Network error while updating API key.', type: 'error' });
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
+  const handlePasteKey = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setApiKeyInput(text.trim());
+      }
+    } catch (e) {}
+  };
+
+  // Audio tone generator for incoming SMS ping
   const playSmsSound = () => {
     if (!soundEnabled) return;
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5 note
       gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
       osc.start();
       osc.stop(ctx.currentTime + 0.3);
     } catch {
@@ -67,422 +169,700 @@ export const LiveTestSmsView: React.FC = () => {
     }
   };
 
-  // Sync logs directly from live IPRN API endpoint
-  const loadLogs = async () => {
-    try {
-      fetch('/api/my-numbers')
-        .then(r => r.json())
-        .then(data => {
-          if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
-            const rangeNames = new Set(data.numbers.map((n: any) => n.rangeName || n.term || 'Range'));
-            setActiveRangesCount(rangeNames.size);
-
-            // Dynamically populate route cards from active live numbers
-            const dynamicRoutesMap = new Map();
-            data.numbers.forEach((n: any) => {
-              const rName = n.rangeName || n.term || n.range;
-              if (rName && !dynamicRoutesMap.has(rName)) {
-                const rawClean = n.number.replace('+', '');
-                const prefix = n.number.startsWith('+') ? n.number.substring(0, 4) : '+' + n.number.substring(0, 3);
-                const flagCode = rName.includes('Azerbaijan') ? 'AZ' : rName.includes('Cambodia') ? 'KH' : rName.includes('Ecuador') ? 'EC' : rName.includes('Benin') ? 'BJ' : rName.includes('Bolivia') ? 'BO' : rName.includes('Bangladesh') ? 'BD' : rName.includes('United Kingdom') ? 'GB' : rName.includes('Algeria') ? 'DZ' : 'AZ';
-                dynamicRoutesMap.set(rName, {
-                  name: rName,
-                  prefix,
-                  defaultNum: rawClean,
-                  cost: n.cost || n.rate || '0.0096 USD',
-                  flag: flagCode
-                });
-              }
-            });
-            if (dynamicRoutesMap.size > 0) {
-              setRoutes(Array.from(dynamicRoutesMap.values()));
+  // Listen for real-time update events dispatched globally
+  useEffect(() => {
+    const handleSmsUpdated = () => {
+      try {
+        const saved = localStorage.getItem('real_sms_logs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const freshLogs: SmsLog[] = parsed.map((l: any) => ({
+              ...l,
+              cost: l.cost || '0.0100 USD'
+            }));
+            const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+              playSmsSound();
             }
+            prevFirstIdRef.current = newestId;
+            setLiveLogs(freshLogs);
           }
-        })
-        .catch(() => {});
+        }
 
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          if (data.logs.length > prevCountRef.current && prevCountRef.current !== 0) {
-            playSmsSound();
-          }
-          prevCountRef.current = data.logs.length;
-          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
-          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
-          setIsConnected(true);
-          if (data.last_updated) {
-            setLastSyncTime(new Date(data.last_updated).toLocaleTimeString());
-          } else {
-            setLastSyncTime(new Date().toLocaleTimeString());
-          }
-          return;
+        const savedMessages = localStorage.getItem('total_messages_stat');
+        if (savedMessages) {
+          setTotalMessagesStat(parseInt(savedMessages, 10));
+        }
+        const savedRanges = localStorage.getItem('ranges_stat');
+        if (savedRanges) {
+          setRangesStat(parseInt(savedRanges, 10));
+        }
+      } catch (err) {
+        console.warn('Error syncing live test SMS logs from custom event:', err);
+      }
+    };
+
+    window.addEventListener('real_sms_updated', handleSmsUpdated);
+    window.addEventListener('real_sms_updated_event', handleSmsUpdated);
+    return () => {
+      window.removeEventListener('real_sms_updated', handleSmsUpdated);
+      window.removeEventListener('real_sms_updated_event', handleSmsUpdated);
+    };
+  }, [soundEnabled]);
+
+  // Sync logs and metrics via direct fetch
+  const fetchLatestData = async () => {
+    if (!isLiveActive) return;
+    try {
+      // 1. Fetch dashboard metrics for live counters
+      const metricsRes = await fetch('/api/dashboard-metrics');
+      if (metricsRes.ok) {
+        const data = await metricsRes.json();
+        if (data?.metrics?.messages !== undefined) {
+          setTotalMessagesStat(data.metrics.messages);
+          localStorage.setItem('total_messages_stat', data.metrics.messages.toString());
+        }
+        if (data?.metrics?.totalRanges !== undefined) {
+          setRangesStat(data.metrics.totalRanges);
+          localStorage.setItem('ranges_stat', data.metrics.totalRanges.toString());
         }
       }
-      setIsConnected(true);
-    } catch (e) {
-      setIsConnected(false);
-    }
 
-    const existing = localStorage.getItem('real_sms_logs');
-    if (existing) {
-      try {
-        const parsed = JSON.parse(existing);
-        setLiveLogs(parsed.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
-      } catch (e) {}
+      // 2. Fetch active live SMS logs
+      const smsRes = await fetch('/api/active-sms');
+      if (smsRes.ok) {
+        const smsData = await smsRes.json();
+        if (smsData.logs && Array.isArray(smsData.logs)) {
+          const freshLogs: SmsLog[] = smsData.logs.map((l: any) => ({
+            ...l,
+            cost: l.cost || '0.0100 USD'
+          }));
+
+          const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+          if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+            playSmsSound();
+          }
+          prevFirstIdRef.current = newestId;
+
+          setLiveLogs(freshLogs);
+          localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+          setIsConnected(true);
+          if (smsData.last_updated) {
+            setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Live test SMS sync notice:', e);
     }
   };
 
+  // Real-Time EventSource (SSE) listener for instant sub-second push
   useEffect(() => {
-    loadLogs();
-    const handleSync = () => loadLogs();
-    window.addEventListener('real_sms_updated', handleSync);
-    const interval = setInterval(loadLogs, 8000);
-    return () => {
-      window.removeEventListener('real_sms_updated', handleSync);
-      clearInterval(interval);
-    };
-  }, []);
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onopen = () => setIsConnected(true);
+      eventSource.onerror = () => setIsConnected(false);
+      eventSource.onmessage = (event) => {
+        if (!isLiveActive) return;
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload) {
+            if (payload.metrics?.messages !== undefined) {
+              setTotalMessagesStat(payload.metrics.messages);
+            }
+            if (payload.metrics?.totalRanges !== undefined) {
+              setRangesStat(payload.metrics.totalRanges);
+            }
+            if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
+              const freshLogs: SmsLog[] = payload.active_sms_logs.map((l: any) => ({
+                ...l,
+                cost: l.cost || '0.0100 USD'
+              }));
+              const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                playSmsSound();
+              }
+              prevFirstIdRef.current = newestId;
+              setLiveLogs(freshLogs);
+              localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+              if (payload.last_updated) {
+                setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+              }
+            }
+          }
+        } catch (err) {
+          console.error('SSE parse error:', err);
+        }
+      };
+    } catch (err) {
+      console.warn('SSE fallback:', err);
+    }
 
-  // Mask OTP codes in text body
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [isLiveActive]);
+
+  // Polling fallback every 2.5 seconds to guarantee active feed
+  useEffect(() => {
+    fetchLatestData();
+    const interval = setInterval(fetchLatestData, 2500);
+    return () => clearInterval(interval);
+  }, [isLiveActive]);
+
+  // Mask OTP codes in text body as seen in official panel (XXXXXX)
   const maskSmsOtp = (text: string): string => {
-    let masked = text.replace(/\b\d{3}-\d{3}\b/g, 'XXX-XXX');
-    masked = masked.replace(/\b\d{4,8}\b/g, (match) => 'X'.repeat(match.length));
+    if (!text) return '';
+    let masked = text.replace(/\b\d{6}\b/g, 'XXXXXX');
+    masked = masked.replace(/\b\d{4,5}\b/g, 'XXXX');
+    masked = masked.replace(/(\d{2})\s*minutes/i, 'XX minutes');
     return masked;
   };
 
   const handleClear = () => {
+    setLiveLogs([]);
     localStorage.setItem('real_sms_logs', JSON.stringify([]));
-    window.dispatchEvent(new Event('real_sms_updated'));
   };
 
   const handleExport = () => {
     if (filteredLogs.length === 0) return;
     const headers = 'Timestamp,Number,Route/Termination,SenderID,Cost,Status,Message\n';
     const rows = filteredLogs.map(m => 
-      `"${m.timestamp}","${m.number}","${m.termination}","${m.sid}","${m.cost || '0.0000 USD'}","${m.status}","${m.text.replace(/"/g, '""')}"`
+      `"${m.timestamp}","${m.number}","${m.termination}","${m.sid}","${m.cost || '0.0100 USD'}","${m.status}","${(m.text || '').replace(/"/g, '""')}"`
     ).join('\n');
     
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `live_sms_stream_export_${Date.now()}.csv`);
+    link.setAttribute('download', `live_sms_stream_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Dynamic available countries
+  const handleCopy = (log: SmsLog, logKey: string) => {
+    const cleanNum = log.number ? log.number.replace(/^\+/, '') : '';
+    const content = `${cleanNum} | ${log.termination} | ${log.sid}: ${log.text}`;
+    navigator.clipboard.writeText(content);
+    setCopiedId(logKey);
+    setTimeout(() => setCopiedId(null), 1800);
+  };
+
+  // Dynamic available countries from live logs
   const availableCountries = useMemo(() => {
-    const list = new Set<string>(['Benin', 'Ecuador', 'Bolivia', 'Bangladesh', 'Algeria', 'Azerbaijan', 'United Kingdom', 'United States']);
+    const list = new Set<string>(['Bolivia', 'Cambodia', 'Ecuador', 'Benin', 'Azerbaijan', 'Algeria', 'United Kingdom']);
     liveLogs.forEach(l => {
       if (l.termination) {
-        const first = l.termination.split(' - ')[0].trim();
-        if (first) list.add(first);
+        const countryName = l.termination.split(' - ')[0].trim();
+        if (countryName) list.add(countryName);
       }
     });
     return Array.from(list).sort();
   }, [liveLogs]);
 
-  // Flag renderer
+  // Country Flag Renderer with authentic flag colors matching the panel
   const renderFlag = (termination: string) => {
-    if (termination.includes('Ecuador')) {
+    const term = (termination || '').toLowerCase();
+    
+    // Bolivia Flag (Red, Yellow, Green horizontal stripes)
+    if (term.includes('bolivia')) {
       return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800 relative">
-          <div className="h-1/2 bg-[#FFD700]" />
-          <div className="h-1/4 bg-[#0030a0]" />
-          <div className="h-1/4 bg-[#D21034]" />
-        </div>
-      );
-    }
-    if (termination.includes('Benin')) {
-      return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
-          <div className="w-[35%] bg-[#008751]" />
-          <div className="w-[65%] flex flex-col h-full">
-            <div className="h-1/2 bg-[#fcd116]" />
-            <div className="h-1/2 bg-[#e8112d]" />
-          </div>
-        </div>
-      );
-    }
-    if (termination.includes('Bolivia')) {
-      return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="h-1/3 bg-[#D52B1E]" />
           <div className="h-1/3 bg-[#F9E300]" />
           <div className="h-1/3 bg-[#007934]" />
         </div>
       );
     }
-    if (termination.includes('Bangladesh')) {
+    // Benin Flag (Green vertical left bar, yellow top right, red bottom right)
+    if (term.includes('benin')) {
       return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#006a4e] flex items-center justify-center relative shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
-          <div className="w-3.5 h-3.5 rounded-full bg-[#f42a41]" />
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="w-[40%] bg-[#008751]" />
+          <div className="w-[60%] flex flex-col h-full">
+            <div className="h-1/2 bg-[#FCD116]" />
+            <div className="h-1/2 bg-[#E8112D]" />
+          </div>
         </div>
       );
     }
-    if (termination.includes('Algeria')) {
+    // Cambodia Flag (Blue, Red with temple, Blue)
+    if (term.includes('cambodia')) {
       return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 relative">
+          <div className="h-[25%] bg-[#032EA6]" />
+          <div className="h-[50%] bg-[#ED1B24] flex items-center justify-center">
+            <div className="w-3 h-2 bg-white/90 rounded-2xs" />
+          </div>
+          <div className="h-[25%] bg-[#032EA6]" />
+        </div>
+      );
+    }
+    // Ecuador Flag (Yellow top 50%, Blue 25%, Red 25%)
+    if (term.includes('ecuador')) {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="h-1/2 bg-[#FFD100]" />
+          <div className="h-1/4 bg-[#0033A0]" />
+          <div className="h-1/4 bg-[#DA291C]" />
+        </div>
+      );
+    }
+    // Azerbaijan Flag (Blue, Red, Green horizontal)
+    if (term.includes('azerbaijan')) {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="h-1/3 bg-[#0092BC]" />
+          <div className="h-1/3 bg-[#E4002B]" />
+          <div className="h-1/3 bg-[#009944]" />
+        </div>
+      );
+    }
+    // Algeria Flag (Green left, White right)
+    if (term.includes('algeria')) {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="w-1/2 bg-[#006233]" />
           <div className="w-1/2 bg-white" />
         </div>
       );
     }
-    if (termination.includes('Azerbaijan')) {
+    // United Kingdom (UK)
+    if (term.includes('united kingdom') || term.includes('uk')) {
       return (
-        <div className="w-8 h-8 rounded-lg overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
-          <div className="h-1/3 bg-[#00B5E2]" />
-          <div className="h-1/3 bg-[#EF3340]" />
-          <div className="h-1/3 bg-[#509E2F]" />
+        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#012169] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+          <div className="absolute w-full h-[3px] bg-red-600" />
+          <div className="absolute h-full w-[3px] bg-red-600" />
         </div>
       );
     }
-    if (termination.includes('United Kingdom') || termination.includes('UK')) {
-      return (
-        <div className="w-8 h-8 bg-[#012169] rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
-          🇬🇧
-        </div>
-      );
-    }
-    if (termination.includes('United States') || termination.includes('US')) {
-      return (
-        <div className="w-8 h-8 bg-[#0A3161] rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-800">
-          🇺🇸
-        </div>
-      );
-    }
-    return <div className="w-8 h-8 bg-slate-200 dark:bg-slate-800 rounded-lg flex items-center justify-center text-[10px]">🌐</div>;
+    // Default Flag
+    return (
+      <div className="w-10 h-7 rounded-xs bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs shadow-xs shrink-0">
+        🌐
+      </div>
+    );
   };
 
-  // Stats
-  const totalMessagesCount = liveLogs.length;
-  
-  const rangesCount = useMemo(() => {
-    const rangeSet = new Set<string>();
-    liveLogs.forEach(log => {
-      if (log.termination) {
-        rangeSet.add(log.termination.trim());
-      }
-    });
-    return Math.max(activeRangesCount, rangeSet.size);
-  }, [liveLogs, activeRangesCount]);
-
-  // Filters
+  // Filter logs based on search and country
   const filteredLogs = useMemo(() => {
     return liveLogs.filter(log => {
-      const matchesSearch = 
+      const termMatch = 
         !searchTerm ||
-        log.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.number.includes(searchTerm) ||
-        log.termination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.sid.toLowerCase().includes(searchTerm.toLowerCase());
-        
-      const matchesCountry = selectedCountry === 'All' || log.termination.includes(selectedCountry);
-      return matchesSearch && matchesCountry;
+        (log.text || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (log.number || '').includes(searchTerm) ||
+        (log.termination || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (log.sid || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+      const countryMatch = selectedCountry === 'All' || (log.termination || '').toLowerCase().includes(selectedCountry.toLowerCase());
+      return termMatch && countryMatch;
     });
   }, [liveLogs, searchTerm, selectedCountry]);
 
   const totalPages = Math.ceil(filteredLogs.length / perPage) || 1;
   const paginatedLogs = useMemo(() => {
-    const startIndex = (currentPage - 1) * perPage;
-    return filteredLogs.slice(startIndex, startIndex + perPage);
+    const start = (currentPage - 1) * perPage;
+    return filteredLogs.slice(start, start + perPage);
   }, [filteredLogs, currentPage, perPage]);
 
+  // Format relative time (10m, 2s, 1m)
   const formatTimeAgo = (isoString: string) => {
     try {
       const date = new Date(isoString);
-      const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
-      if (diffSec < 5) return 'Just now';
+      const diffSec = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
       if (diffSec < 60) return `${diffSec}s`;
       const diffMin = Math.floor(diffSec / 60);
       if (diffMin < 60) return `${diffMin}m`;
+      const diffHr = Math.floor(diffMin / 60);
+      return `${diffHr}h`;
+    } catch {
+      return '1m';
+    }
+  };
+
+  // Format exact time (HH:mm:ss)
+  const formatExactTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
       return date.toLocaleTimeString('en-US', { hour12: false });
     } catch {
-      return '';
+      return '03:29:14';
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-        <span>Dashboard</span>
-        <span>/</span>
-        <span>Test System</span>
-        <span>/</span>
-        <span className="text-[#65a30d] font-bold">Live Test SMS</span>
+    <div className="space-y-5">
+      {/* Breadcrumbs matching original panel */}
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+        <span className="hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer">Dashboard</span>
+        <span>&gt;</span>
+        <span className="hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer">Test System</span>
+        <span>&gt;</span>
+        <span className="text-slate-900 dark:text-white font-bold">Live Test SMS</span>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-2xs">
+      {/* Live API Key Input / Configuration Banner */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs relative overflow-hidden transition-all">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-lime-500 via-emerald-500 to-teal-500" />
+        
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="w-8 h-8 rounded-lg bg-lime-100 dark:bg-lime-950/50 text-lime-600 dark:text-lime-400 flex items-center justify-center shrink-0">
+                <Key className="w-4 h-4 stroke-[2.5]" />
+              </div>
+              <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
+                Live Test API Key
+              </h3>
+              {apiKey ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300/50 dark:border-emerald-800/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Key Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300/50">
+                  Key Required
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              এখান থেকে একটি এপিআই কি (API Key) পেস্ট করে সেভ করুন। এই কি থেকে আসা সকল রিয়েল টাইম এসএমএস নিচে লাইভ শো করবে।
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto min-w-[320px] max-w-xl">
+            <div className="relative flex-1">
+              <input
+                type={isKeyVisible ? 'text' : 'password'}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="Paste API Key here (e.g. sk_live_...)"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 pr-20 text-xs font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-lime-500/50 transition-all placeholder:text-slate-400"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setIsKeyVisible(!isKeyVisible)}
+                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md transition cursor-pointer"
+                  title={isKeyVisible ? "Hide key" : "Show key"}
+                >
+                  {isKeyVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePasteKey}
+                  className="p-1 px-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 text-[10px] font-bold rounded-md transition flex items-center gap-1 cursor-pointer"
+                  title="Paste from clipboard"
+                >
+                  <Clipboard className="w-3 h-3" />
+                  Paste
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveApiKey}
+              disabled={isSavingKey}
+              className="px-4 py-2.5 bg-lime-600 hover:bg-lime-700 active:scale-95 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            >
+              {isSavingKey ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  <span>Connect Key</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {keySaveMessage && (
+          <div className={`mt-3 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-2 ${
+            keySaveMessage.type === 'success' 
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
+              : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+          }`}>
+            {keySaveMessage.type === 'success' ? <Check className="w-4 h-4 text-emerald-600" /> : <Key className="w-4 h-4 text-rose-600" />}
+            <span>{keySaveMessage.text}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Top Metric Cards matching the screenshot */}
+      <div className="space-y-4">
+        {/* TOTAL MESSAGES Card */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 relative shadow-xs">
+          <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#84cc16]" />
           <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 tracking-wider block uppercase">
                 TOTAL MESSAGES
               </span>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-850 dark:text-white tracking-tight">
-                {totalMessagesCount}
-              </h3>
-              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                {totalMessagesStat.toLocaleString('en-US')}
+              </h2>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 pt-0.5">
                 Live Stream
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-lime-50 dark:bg-lime-950/20 text-[#65a30d] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/40 dark:text-lime-400 flex items-center justify-center shrink-0">
               <Mail className="w-5 h-5" />
             </div>
           </div>
-          <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#65a30d]" />
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-2xs">
+        {/* RANGES Card */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 relative shadow-xs">
+          <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#84cc16]" />
           <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 tracking-wider block uppercase">
                 RANGES
               </span>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-850 dark:text-white tracking-tight">
-                {rangesCount}
-              </h3>
-              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                {rangesStat.toLocaleString('en-US')}
+              </h2>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 pt-0.5">
                 Receiving traffic
               </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-lime-50 dark:bg-lime-950/20 text-[#65a30d] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/40 dark:text-lime-400 flex items-center justify-center shrink-0">
               <Layers className="w-5 h-5" />
             </div>
           </div>
-          <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#65a30d]" />
         </div>
       </div>
 
-      {/* Message Stream */}
-      <div className="space-y-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h3 className="text-base font-black text-slate-900 dark:text-white">
-                Message stream
-              </h3>
-              <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                real-time feed
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
-                  soundEnabled 
-                    ? 'bg-lime-50 text-lime-700 border-lime-200 dark:bg-lime-950/30 dark:border-lime-800 dark:text-lime-400'
-                    : 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 dark:border-slate-700'
-                }`}
-              >
-                {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-              </button>
-
-              <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
-                isConnected 
-                  ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
-                  : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400'
-              }`}>
-                {isConnected ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Connected</span>
-                    {lastSyncTime && <span className="text-[10px] opacity-75 font-normal ml-1">({lastSyncTime})</span>}
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="w-3.5 h-3.5" />
-                    <span>Reconnecting...</span>
-                  </>
-                )}
-              </div>
-            </div>
+      {/* Message Stream Card matching the screenshot */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
+        {/* Stream Header */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Message stream
+            </h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              real-time feed
+            </span>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                placeholder="Search messages, phone numbers, countries..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            {/* Audio Mute/Unmute */}
+            <button
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition cursor-pointer"
+              title={soundEnabled ? 'Mute sound' : 'Enable sound'}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
 
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:outline-none cursor-pointer"
-              >
-                <option value="All">All Countries</option>
-                {availableCountries.map(country => (
-                  <option key={country} value={country}>{country}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={handleClear}
-                className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl border border-rose-200 dark:border-rose-900 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear</span>
-              </button>
-
-              <button
-                onClick={handleExport}
-                className="p-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export</span>
-              </button>
+            {/* Connected Pill */}
+            <div className="px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Connected</span>
             </div>
           </div>
+        </div>
 
-          {/* Stream List */}
+        {/* Action Buttons: LIVE, Clear, Export */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* LIVE button with teal/emerald background */}
+          <button
+            onClick={() => setIsLiveActive(!isLiveActive)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+              isLiveActive 
+                ? 'bg-[#0f766e] text-white shadow-xs' 
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <Radio className={`w-3.5 h-3.5 ${isLiveActive ? 'animate-pulse' : ''}`} />
+            <span>LIVE</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-white ml-0.5" />
+          </button>
+
+          {/* Clear button */}
+          <button
+            onClick={handleClear}
+            className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/20 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear</span>
+          </button>
+
+          {/* Export button */}
+          <button
+            onClick={handleExport}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export</span>
+          </button>
+        </div>
+
+        {/* Search input */}
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+          <input
+            type="text"
+            placeholder="Search messages, phone numbers, countries..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-slate-400 transition"
+          />
+        </div>
+
+        {/* Country filter */}
+        <div>
+          <select
+            value={selectedCountry}
+            onChange={(e) => setSelectedCountry(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+          >
+            <option value="All">All Countries</option>
+            {availableCountries.map(country => (
+              <option key={country} value={country}>{country}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Pagination & Count Row */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Per page</span>
+            <select
+              value={perPage}
+              onChange={(e) => {
+                setPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-xs font-medium focus:outline-none cursor-pointer"
+            >
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded text-xs disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-1"
+            >
+              <ChevronLeft className="w-3 h-3" />
+              <span>Prev</span>
+            </button>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded text-xs disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer flex items-center gap-1"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Total messages shown count */}
+        <div className="text-xs text-slate-400 font-medium">
+          {paginatedLogs.length} / {filteredLogs.length} messages
+        </div>
+
+        {/* Message Cards List matching the screenshot */}
+        <div className="space-y-3 pt-2">
           {paginatedLogs.length === 0 ? (
-            <div className="py-12 text-center space-y-2">
-              <p className="text-xs font-bold text-slate-400">No test messages in live stream.</p>
+            <div className="py-12 text-center text-xs text-slate-400 font-semibold">
+              Waiting for live incoming messages...
             </div>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginatedLogs.map((log, index) => (
-                <div key={index} className="py-3 flex items-start gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-950/50 px-2 rounded-xl transition">
-                  {renderFlag(log.termination)}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-slate-900 dark:text-white">
-                          {log.sid}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          {log.number}
-                        </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                          {log.termination}
+            paginatedLogs.map((log, idx) => {
+              const logKey = log.id || `${log.number}-${idx}`;
+              const cleanNumber = log.number ? log.number.replace(/^\+/, '') : '';
+              const senderInitial = (log.sid || 'A').charAt(0).toUpperCase();
+
+              return (
+                <div 
+                  key={logKey}
+                  className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-4 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition space-y-3"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Country Flag */}
+                    <div className="pt-0.5">
+                      {renderFlag(log.termination)}
+                    </div>
+
+                    {/* Message Details */}
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      {/* Line 1: Route Name + Relative Time */}
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                          {log.termination || 'Live Gateway'}
+                        </h4>
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">
+                          {formatTimeAgo(log.timestamp)}
                         </span>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {formatTimeAgo(log.timestamp)}
-                      </span>
+
+                      {/* Line 2: Phone Number + Exact Time */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                          {cleanNumber}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-mono shrink-0">
+                          {formatExactTime(log.timestamp)}
+                        </span>
+                      </div>
+
+                      {/* Line 3: Sender badge + Cost pill */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <div className="w-4 h-4 rounded-xs bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/60 dark:text-lime-400 font-black text-[10px] flex items-center justify-center shrink-0">
+                          {senderInitial}
+                        </div>
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                          {log.sid || 'AUTHMSG'}
+                        </span>
+                        <div className="px-2 py-0.5 rounded-sm bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/50 dark:text-lime-400 text-[11px] font-bold">
+                          {log.cost || '0.0100 USD'}
+                        </div>
+                      </div>
+
+                      {/* Line 4: Message Body with masked OTP */}
+                      <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed pt-1 select-text">
+                        {maskSmsOtp(log.text)}
+                      </p>
                     </div>
-                    <p className="text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                      {maskSmsOtp(log.text)}
-                    </p>
+                  </div>
+
+                  {/* Bottom Row with + Button */}
+                  <div className="flex justify-end pt-1">
+                    <button
+                      onClick={() => handleCopy(log, logKey)}
+                      className="w-7 h-7 rounded-md bg-[#ecfccb] hover:bg-[#d9f99d] text-[#65a30d] dark:bg-lime-950/60 dark:hover:bg-lime-900/60 dark:text-lime-400 flex items-center justify-center transition cursor-pointer shadow-2xs"
+                      title="Copy message & number"
+                    >
+                      {copiedId === logKey ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                      )}
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })
           )}
         </div>
       </div>

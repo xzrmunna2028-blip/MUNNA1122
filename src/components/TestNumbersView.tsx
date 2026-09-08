@@ -37,7 +37,7 @@ export const TestNumbersView: React.FC = () => {
   useEffect(() => {
     const fetchLiveNumbers = async () => {
       try {
-        const res = await fetch('/api/my-numbers');
+        const res = await fetch('/api/test-terminations');
         if (res.ok) {
           const data = await res.json();
           if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
@@ -55,8 +55,6 @@ export const TestNumbersView: React.FC = () => {
       } catch (e) {}
     };
     fetchLiveNumbers();
-    window.addEventListener('rented_numbers_updated', fetchLiveNumbers);
-    return () => window.removeEventListener('rented_numbers_updated', fetchLiveNumbers);
   }, []);
 
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -96,7 +94,7 @@ export const TestNumbersView: React.FC = () => {
       item.name,
       item.code,
       item.number,
-      '$0.0000'
+      item.rate || '0.0096 USD'
     ]);
     
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -222,9 +220,9 @@ export const TestNumbersView: React.FC = () => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      item.name.toLowerCase().includes(q) ||
-      item.number.toLowerCase().includes(q) ||
-      item.code.toLowerCase().includes(q)
+      (item.name || '').toLowerCase().includes(q) ||
+      (item.number || '').toLowerCase().includes(q) ||
+      (item.code || '').toLowerCase().includes(q)
     );
   });
 
@@ -320,7 +318,7 @@ export const TestNumbersView: React.FC = () => {
                         RATE
                       </span>
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                        $0.0000
+                        {item.rate || '0.0096 USD'}
                       </span>
                     </div>
                   </div>
