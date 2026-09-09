@@ -80,6 +80,19 @@ export class CoreStore {
   private static lastReadTime = 0;
   private static cacheTTL = 1000; // 1-second hot read cache TTL to handle extreme request spikes
   private static writeQueue: Promise<boolean> = Promise.resolve(true); // Sequential queue to prevent race conditions on writes
+  private static quotaFilePath = path.join(process.cwd(), '.firestore_quota');
+  private static quotaExhaustedUntil: number = (() => {
+    try {
+      const qPath = path.join(process.cwd(), '.firestore_quota');
+      if (fs.existsSync(qPath)) {
+        const val = parseInt(fs.readFileSync(qPath, 'utf8').trim(), 10);
+        if (!isNaN(val) && val > Date.now()) {
+          return val;
+        }
+      }
+    } catch {}
+    return 0;
+  })(); // Timestamp until which Firestore writes should be bypassed
 
   /**
    * Reads data with a 1-second in-memory caching layer and real-time Firestore database synchronization.
@@ -115,42 +128,17 @@ export class CoreStore {
           ...mergedData,
           ...settingsData,
           metrics: { ...mergedData.metrics, ...(settingsData.metrics || {}) },
-          realtime_counters: { ...mergedData.realtime_counters, ...(settingsData.realtime_counters || {}) }
+          realtime_counters: { ...mergedData.realtime_counters, ...(settingsData.realtime_counters || {}) },
+          active_sms_logs: settingsData.active_sms_logs || [],
+          rented_numbers: settingsData.rented_numbers || [],
+          activity_logs: settingsData.activity_logs || []
         };
       }
-
-      // 2. Fetch SMS logs collection
-      const smsSnap = await getDocs(collection(db, 'active_sms_logs'));
-      const smsLogs: SmsLog[] = [];
-      smsSnap.forEach((docSnap) => {
-        smsLogs.push(docSnap.data() as SmsLog);
-      });
-      // Sort by timestamp desc to match UI expectation
-      smsLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      mergedData.active_sms_logs = smsLogs;
-
-      // 3. Fetch Rented numbers
-      const numSnap = await getDocs(collection(db, 'rented_numbers'));
-      const numbers: RentedNumber[] = [];
-      numSnap.forEach((docSnap) => {
-        numbers.push(docSnap.data() as RentedNumber);
-      });
-      mergedData.rented_numbers = numbers;
-
-      // 4. Fetch Activity logs
-      const actSnap = await getDocs(collection(db, 'activity_logs'));
-      const activity: ActivityLog[] = [];
-      actSnap.forEach((docSnap) => {
-        activity.push(docSnap.data() as ActivityLog);
-      });
-      activity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      mergedData.activity_logs = activity.slice(0, 150);
 
       this.cache = mergedData;
       this.lastReadTime = now;
       return JSON.parse(JSON.stringify(mergedData));
     } catch (error) {
-      console.error('[CoreStore] Firestore read failed, attempting to serve cache:', error);
       if (this.cache) {
         return JSON.parse(JSON.stringify(this.cache));
       }
@@ -175,51 +163,49 @@ export class CoreStore {
     // Automatically recompute metrics and dashboard counters before persisting
     this.recomputeStats(data);
 
-    // Force cache update
+    // Force local memory cache update
     this.cache = JSON.parse(JSON.stringify(data));
     this.lastReadTime = Date.now();
 
+    // If Firestore write quota is exhausted for the project today, skip gRPC write to prevent stream errors
+    if (Date.now() < this.quotaExhaustedUntil) {
+      return true;
+    }
+
     this.writeQueue = this.writeQueue.then(async () => {
       try {
+        if (Date.now() < this.quotaExhaustedUntil) {
+          return true;
+        }
+
         data.last_updated = new Date().toISOString();
 
-        // 1. Write settings/global
+        // Write atomic settings/global document (1 single efficient write unit)
         const settingsRef = doc(db, 'settings', 'global');
         await setDoc(settingsRef, {
           last_updated: data.last_updated,
           iprn_api_key: data.iprn_api_key || '',
           metrics: data.metrics,
           realtime_counters: data.realtime_counters,
-          chart_data: data.chart_data || []
+          chart_data: data.chart_data || [],
+          active_sms_logs: (data.active_sms_logs || []).slice(0, 100),
+          rented_numbers: (data.rented_numbers || []).slice(0, 100),
+          activity_logs: (data.activity_logs || []).slice(0, 50)
         });
-
-        // 2. Write active_sms_logs concurrently
-        const smsPromises = (data.active_sms_logs || []).map((log) => {
-          if (!log || !log.id) return Promise.resolve();
-          return setDoc(doc(db, 'active_sms_logs', log.id), log);
-        });
-
-        // 3. Write rented_numbers
-        const numPromises = (data.rented_numbers || []).map((num) => {
-          if (!num || !num.id) return Promise.resolve();
-          return setDoc(doc(db, 'rented_numbers', num.id), num);
-        });
-
-        // 4. Write activity_logs
-        const actPromises = (data.activity_logs || []).map((act) => {
-          if (!act || !act.id) return Promise.resolve();
-          return setDoc(doc(db, 'activity_logs', act.id), act);
-        });
-
-        await Promise.all([
-          ...smsPromises,
-          ...numPromises,
-          ...actPromises
-        ]);
 
         return true;
-      } catch (error) {
-        console.error('[CoreStore] Firestore atomic write failed:', error);
+      } catch (error: any) {
+        const errMsg = String(error?.message || error?.code || '');
+        if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('resource-exhausted') || errMsg.includes('Quota') || error?.code === 8 || error?.code === 'resource-exhausted') {
+          // Back off Firestore writes for 12 hours so gRPC write streams are completely muted
+          this.quotaExhaustedUntil = Date.now() + 12 * 60 * 60 * 1000;
+          try {
+            fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), 'utf8');
+          } catch {}
+          console.warn('[CoreStore] Firestore daily write quota limit reached. Safely persisting via local high-speed memory & JSON engine.');
+        } else {
+          console.warn('[CoreStore] Firestore sync notice:', error?.message || error);
+        }
         return false;
       }
     });
@@ -380,19 +366,15 @@ export class CoreStore {
   public static async fetchWithRetry(
     url: string,
     options: RequestInit,
-    retries = 3,
-    delay = 1000
+    retries = 2,
+    delay = 2000
   ): Promise<Response> {
     for (let i = 0; i < retries; i++) {
       try {
         const response = await fetch(url, options);
         if (response.status === 429) {
-          // Rate-limited: wait longer
-          const retryAfter = response.headers.get('Retry-After');
-          const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : delay * Math.pow(2, i);
-          console.warn(`[CoreStore] Rate limited (429) on provider API. Retrying in ${waitTime}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-          continue;
+          console.warn(`[CoreStore] Rate limited (429) on ${url}. Respecting provider limits and backing off.`);
+          return response; // Return response immediately instead of spamming retries
         }
         return response;
       } catch (err: any) {
@@ -402,7 +384,7 @@ export class CoreStore {
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       }
     }
-    throw new Error('Max fetch retries exceeded');
+    throw new Error('fetchWithRetry failed after maximum attempts');
   }
 
   /**

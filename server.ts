@@ -4,6 +4,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 import { createServer as createViteServer } from 'vite';
+import { CoreStore } from './api/_lib/store.js';
+import { KSI_MASTER_TERMINATIONS } from './src/data/ksiMasterRanges.ts';
 
 async function startServer() {
   const app = express();
@@ -15,21 +17,28 @@ async function startServer() {
     }
   }));
 
+  // Enable CORS for all API endpoints
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-webhook-signature');
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+    next();
+  });
+
   const jsonPath = path.join(process.cwd(), 'iprn_sync.json');
   const pythonScriptPath = path.join(process.cwd(), 'iprn_sync.py');
 
-  // Helper to read the IPRN JSON sync file
+  // Helper to read the IPRN JSON sync file with Firestore fallback/sync
   const readSyncData = () => {
     try {
       if (fs.existsSync(jsonPath)) {
         const raw = fs.readFileSync(jsonPath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.active_sms_logs)) {
-          parsed.active_sms_logs = parsed.active_sms_logs.filter((log: any) => {
-            if (!log || typeof log !== 'object') return false;
-            const id = String(log.id || '');
-            return !id.startsWith('MSG-LIVE-') && !id.startsWith('MSG-MOCK-') && !id.startsWith('MSG-DEMO-') && !id.startsWith('MSG-SIM-');
-          });
+          parsed.active_sms_logs = parsed.active_sms_logs.filter((log: any) => log && typeof log === 'object');
           if (parsed.metrics) {
             parsed.metrics.messages = parsed.active_sms_logs.length;
           }
@@ -87,9 +96,8 @@ async function startServer() {
     const data = readSyncData();
     res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-    // Trigger immediate background fetch so the user sees the newest messages right away
-    console.log('[IPRN-RealTime] Client connected. Triggering immediate messages fetch...');
-    pollIprnMessages();
+    // Trigger rate-limit safe background poll if cooldown period has passed
+    pollIprnMessages(false);
 
     req.on('close', () => {
       sseClients.delete(res);
@@ -133,8 +141,8 @@ async function startServer() {
     });
   });
 
-  // Master Catalog of Real KSI IPRN Termination Ranges from sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z
-  const REAL_KSI_TERMINATIONS: any[] = [];
+  // Master Catalog of Real KSI IPRN Termination Ranges (194 ranges across 86 countries)
+  const REAL_KSI_TERMINATIONS: any[] = KSI_MASTER_TERMINATIONS;
 
   // Dedicated endpoint for live terminations/ranges from IPRN API sync data
   app.get('/api/terminations', (req, res) => {
@@ -158,7 +166,7 @@ async function startServer() {
       });
     });
 
-    // 2. Dynamically aggregate 100% real-time termination ranges directly from live KSI API numbers
+    // 2. Dynamically aggregate any custom termination ranges directly from live KSI API numbers
     numbers.forEach((n: any) => {
       const rangeName = n.rangeName || n.range || n.term;
       if (!rangeName) return;
@@ -180,6 +188,27 @@ async function startServer() {
       }
     });
 
+    // 3. Dynamically discover any new termination ranges from incoming live messages / webhooks
+    (data.active_sms_logs || []).forEach((l: any) => {
+      const rangeName = l.termination || l.rangeName || l.range;
+      if (!rangeName || rangeName === 'Webhook Stream' || rangeName === 'Standard Range') return;
+      const key = rangeName.trim();
+      const code = `TERM_${key.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+      if (!rangeMap.has(code)) {
+        rangeMap.set(code, {
+          code,
+          country: key.includes(' - ') ? key.split(' - ')[0].trim() : key,
+          operator: key.includes(' - ') ? key.split(' - ')[1].trim() : 'Live Gateway Carrier',
+          rangeName: key,
+          available: 'Unlimited available',
+          rate: l.cost || '0.0096 USD',
+          limit: '10,000',
+          number: l.number || '',
+          label: `${key} (Unlimited available)`,
+        });
+      }
+    });
+
     const terminations = Array.from(rangeMap.values());
 
     res.json({
@@ -194,6 +223,14 @@ async function startServer() {
       const { rangeCode, rangeName, count = 1 } = req.body;
       const requestedCount = Math.min(Math.max(1, parseInt(count, 10) || 1), 1000);
       
+      const foundOfficial = REAL_KSI_TERMINATIONS.find(t => t.code === rangeCode || t.rangeName === rangeName);
+      const targetRangeName = rangeName || (foundOfficial ? foundOfficial.rangeName : 'Azerbaijan - Bakcell 3');
+      const targetCountry = foundOfficial ? foundOfficial.country : (targetRangeName.includes(' - ') ? targetRangeName.split(' - ')[0].trim() : 'Global');
+      const targetOperator = foundOfficial ? foundOfficial.operator : (targetRangeName.includes(' - ') ? targetRangeName.split(' - ')[1].trim() : 'Carrier');
+      const targetRate = foundOfficial ? foundOfficial.rate : '0.0096 USD';
+      const targetPrefix = foundOfficial ? foundOfficial.prefix : '+9949977';
+      const targetDigits = foundOfficial ? foundOfficial.digits : 5;
+
       let pool: any[] = [];
       const rawPath = path.join(process.cwd(), 'all_iprn_numbers_raw.json');
       if (fs.existsSync(rawPath)) {
@@ -204,9 +241,6 @@ async function startServer() {
 
       const data = readSyncData();
       const existingNums = new Set((data.rented_numbers || []).map((n: any) => n.number));
-
-      const targetRangeName = rangeName || (rangeCode === 'TERM_CAMBODIA_860' ? 'Cambodia 860' : 'Azerbaijan - Bakcell 3');
-      const isCambodia = targetRangeName.toLowerCase().includes('cambodia');
 
       const matchedPool = pool.filter((item: any) => {
         const r = item.range_name || item.rangeName || item.range || '';
@@ -224,11 +258,11 @@ async function startServer() {
             number: numStr,
             range: item.range_name || targetRangeName,
             rangeName: item.range_name || targetRangeName,
-            operator: targetRangeName.includes(' - ') ? targetRangeName.split(' - ')[1].trim() : (isCambodia ? 'Cambodia 860' : 'Bakcell 3'),
-            country: targetRangeName.includes(' - ') ? targetRangeName.split(' - ')[0].trim() : (isCambodia ? 'Cambodia' : 'Azerbaijan'),
+            operator: targetOperator,
+            country: targetCountry,
             status: 'ACTIVE',
-            cost: `${parseFloat(item.a2p_rate || (isCambodia ? 0.0090 : 0.0096)).toFixed(4)} USD`,
-            rate: `${parseFloat(item.a2p_rate || (isCambodia ? 0.0090 : 0.0096)).toFixed(4)} USD`,
+            cost: `${parseFloat(item.a2p_rate || targetRate.replace(' USD', '')).toFixed(4)} USD`,
+            rate: `${parseFloat(item.a2p_rate || targetRate.replace(' USD', '')).toFixed(4)} USD`,
             expiry: 'Oct 08, 2026',
             term: '1/1',
             lastMessage: item.last_message_at || 'None',
@@ -242,20 +276,21 @@ async function startServer() {
       }
 
       while (selected.length < requestedCount) {
-        const prefix = isCambodia ? '+8553139' : '+9949977';
-        const suffix = String(Math.floor(100000 + Math.random() * 900000)).slice(0, 5);
-        const genNum = `${prefix}${suffix}`;
+        const minRand = Math.pow(10, targetDigits - 1);
+        const maxRand = Math.pow(10, targetDigits) - 1;
+        const suffix = String(Math.floor(minRand + Math.random() * (maxRand - minRand + 1)));
+        const genNum = `${targetPrefix}${suffix}`;
         if (!existingNums.has(genNum)) {
           selected.push({
             id: `NUM-IPRN-${genNum.replace('+', '')}`,
             number: genNum,
             range: targetRangeName,
             rangeName: targetRangeName,
-            operator: isCambodia ? 'Cambodia 860' : 'Bakcell 3',
-            country: isCambodia ? 'Cambodia' : 'Azerbaijan',
+            operator: targetOperator,
+            country: targetCountry,
             status: 'ACTIVE',
-            cost: isCambodia ? '0.0090 USD' : '0.0096 USD',
-            rate: isCambodia ? '0.0090 USD' : '0.0096 USD',
+            cost: targetRate,
+            rate: targetRate,
             expiry: 'Oct 08, 2026',
             term: '1/1',
             lastMessage: 'None',
@@ -279,11 +314,23 @@ async function startServer() {
 
   // Dedicated endpoint for available test terminations/numbers
   app.get('/api/test-terminations', (req, res) => {
-    const data = readSyncData();
+    const testItems = REAL_KSI_TERMINATIONS.map((t: any) => ({
+      id: `TEST-${t.code}`,
+      rangeName: t.rangeName,
+      term: t.rangeName,
+      range: t.rangeName,
+      number: t.sampleNumber,
+      country: t.country,
+      operator: t.operator,
+      cost: t.rate,
+      rate: t.rate,
+      status: 'ACTIVE'
+    }));
+
     res.json({
       status: 'success',
-      last_updated: data.last_updated,
-      numbers: data.rented_numbers || []
+      last_updated: new Date().toISOString(),
+      numbers: testItems
     });
   });
 
@@ -469,7 +516,7 @@ async function startServer() {
   });
 
   // Webhook Signature Verification and Data Ingestion Handler
-  const handleWebhookPayload = (req: any, res: any) => {
+  const handleWebhookPayload = async (req: any, res: any) => {
     try {
       const signatureHeader = 
         req.headers['x-webhook-signature'] || 
@@ -630,8 +677,13 @@ async function startServer() {
       data.activity_logs = [newActivity, ...(data.activity_logs || [])].slice(0, 150);
       data.last_updated = new Date().toISOString();
 
-      // Write updated sync data and broadcast to SSE streams
+      // Write updated sync data, persist to Firestore, and broadcast to SSE streams
       fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+      try {
+        await CoreStore.write(data);
+      } catch (dbErr: any) {
+        console.warn('[Webhook] Firestore write notice:', dbErr.message);
+      }
       broadcastUpdate(data);
 
       return res.status(200).json({
@@ -670,13 +722,18 @@ async function startServer() {
       IPRN_API_KEY: currentApiKey,
     };
 
-    exec(`python3 "${pythonScriptPath}"`, { env }, (error, stdout, stderr) => {
+    exec(`python3 "${pythonScriptPath}"`, { env }, async (error, stdout, stderr) => {
       isSyncing = false;
       const freshData = readSyncData();
       if (error) {
         console.warn('[IPRN-Sync] Notice during background sync:', error.message);
       } else {
         console.log('[IPRN-Sync] Live sync completed successfully.');
+      }
+      try {
+        await CoreStore.write(freshData);
+      } catch (dbErr: any) {
+        console.warn('[IPRN-Sync] Firestore write notice:', dbErr.message);
       }
       broadcastUpdate(freshData);
       if (callback) {
@@ -685,10 +742,21 @@ async function startServer() {
     });
   };
 
-  // Direct, highly efficient, and lightweight Node.js real-time SMS polling
-  const pollIprnMessages = async () => {
+  // Direct, highly efficient, rate-limit protected Node.js real-time SMS poller
+  let nextAllowedPollTime = 0;
+  let isPollingMessages = false;
+
+  const pollIprnMessages = async (force: boolean = false) => {
+    if (isPollingMessages) return;
+    if (!force && Date.now() < nextAllowedPollTime) {
+      const waitSec = Math.ceil((nextAllowedPollTime - Date.now()) / 1000);
+      console.log(`[IPRN-RealTime] Rate limit cooling down. ${waitSec}s remaining before next poll.`);
+      return;
+    }
+    
+    isPollingMessages = true;
     const apiKey = currentApiKey;
-    const url = 'https://ksiiprn.com/api/v1/iprn/messages';
+    const url = 'https://ksiiprn.com/api/v1/iprn/messages?page=1';
     
     try {
       const response = await fetch(url, {
@@ -702,17 +770,37 @@ async function startServer() {
       });
       
       if (response.status === 429) {
-        console.warn('[IPRN-RealTime] Rate limited (429) on messages fetch.');
+        let retrySeconds = 60;
+        try {
+          const rawText = await response.text();
+          let parsed: any = null;
+          try { parsed = JSON.parse(rawText); } catch (_) {}
+          if (parsed?.retry_after) {
+            retrySeconds = parseInt(parsed.retry_after, 10);
+          } else if (parsed?.error?.message) {
+            const m = parsed.error.message.match(/Retry after (\d+) seconds/i);
+            if (m) retrySeconds = parseInt(m[1], 10);
+          } else {
+            const headerRetry = response.headers.get('Retry-After');
+            if (headerRetry) retrySeconds = parseInt(headerRetry, 10);
+          }
+        } catch (_) {}
+        
+        nextAllowedPollTime = Date.now() + (retrySeconds + 10) * 1000;
+        console.warn(`[IPRN-RealTime] Rate limited (429) by KSI API. Safe pause for ${retrySeconds + 10}s.`);
         return;
       }
       
       if (!response.ok) {
         console.warn(`[IPRN-RealTime] HTTP Error ${response.status} on messages fetch.`);
+        nextAllowedPollTime = Date.now() + 30000;
         return;
       }
       
       const payload = await response.json();
       if (payload && payload.success && Array.isArray(payload.data)) {
+        // Reset cooling period on success, minimum 60s between calls
+        nextAllowedPollTime = Date.now() + 60000;
         const msgsData = payload.data;
         const apiMsgsTotal = payload.pagination?.total || msgsData.length || 0;
         
@@ -722,35 +810,52 @@ async function startServer() {
           if (numStr && !numStr.startsWith('+')) {
             numStr = '+' + numStr;
           }
+          const textBody = String(item.text || item.content || '');
+          let extractedOtp = String(item.otp || '');
+          if (!extractedOtp && textBody) {
+            const match = textBody.match(/\b\d{4,8}\b/);
+            if (match) extractedOtp = match[0];
+          }
+
           return {
             id: String(item.id || item.message_id || `MSG-REAL-${Date.now()}-${Math.floor(Math.random() * 10000)}`),
             number: numStr,
-            termination: String(item.range_name || item.termination || ''),
+            termination: String(item.range_name || item.termination || 'Global Route'),
             sid: String(item.sid || item.sender_id || item.sender || 'AUTHMSG'),
             status: String(item.status || 'DELIVERED').toUpperCase(),
-            text: String(item.text || item.content || ''),
-            otp: String(item.otp || ''),
+            text: textBody,
+            otp: extractedOtp,
             timestamp: String(item.timestamp || item.created_at || now.toISOString()),
             cost: `${parseFloat(item.cost || item.a2p_rate || 0.0100).toFixed(4)} USD`,
-            sender: String(item.sender || item.sender_id || 'IPRN-API')
+            sender: String(item.sender || item.sender_id || 'KSI-IPRN-Live')
           };
-        }).filter((log: any) => !log.id.startsWith('MSG-MOCK-')); // Only filter out explicitly mock objects if they exist
+        }).filter((log: any) => 
+          !log.id.startsWith('MSG-IPRN-1788') && 
+          !log.id.startsWith('MSG-MOCK-') && 
+          !log.id.startsWith('MSG-LIVE-') &&
+          !log.id.startsWith('SMS-')
+        );
         
         // Read current state to update stats and merge securely
         const data = readSyncData();
         const rentedNumbers = data.rented_numbers || [];
         const apiRangesTotal = rentedNumbers.length;
         
-        const existingLogs = data.active_sms_logs || [];
+        const existingLogs = (data.active_sms_logs || []).filter((l: any) =>
+          !l.id.startsWith('MSG-IPRN-1788') && 
+          !l.id.startsWith('MSG-MOCK-') && 
+          !l.id.startsWith('MSG-LIVE-') &&
+          !l.id.startsWith('SMS-')
+        );
         const existingIds = new Set(existingLogs.map((l: any) => l.id));
         const freshUnique = liveSmsLogs.filter((l: any) => !existingIds.has(l.id));
         const mergedLogs = [...freshUnique, ...existingLogs];
 
         const baseTotal = Math.max(apiMsgsTotal, mergedLogs.length);
-        const baseDelivered = Math.floor(baseTotal * 0.982);
-        const baseFailed = baseTotal - baseDelivered;
+        const baseDelivered = mergedLogs.filter((l: any) => l.status === 'DELIVERED').length;
+        const baseFailed = mergedLogs.filter((l: any) => l.status === 'FAILED').length;
         const todayCount = baseTotal;
-        const deliveryRate = baseTotal > 0 ? 98.2 : 0.0;
+        const deliveryRate = baseTotal > 0 ? Number(((baseDelivered / Math.max(1, baseTotal)) * 100).toFixed(1)) : 100.0;
         
         data.last_updated = now.toISOString();
         data.metrics = {
@@ -771,73 +876,38 @@ async function startServer() {
         };
         data.active_sms_logs = mergedLogs;
         
-        // Write atomic JSON update
+        // Write atomic JSON update and persist to Firebase Firestore
         fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+        try {
+          await CoreStore.write(data);
+        } catch (dbErr: any) {
+          console.warn('[IPRN-RealTime] Firestore write notice:', dbErr.message);
+        }
         broadcastUpdate(data);
-        console.log(`[IPRN-RealTime] Successfully synchronized ${mergedLogs.length} real messages (added ${freshUnique.length} fresh). totalMessages: ${baseTotal}, totalRanges: ${apiRangesTotal}`);
+        console.log(`[IPRN-RealTime] Synchronized ${mergedLogs.length} authentic messages (+${freshUnique.length} fresh).`);
       }
     } catch (err: any) {
       console.warn('[IPRN-RealTime] Direct messages sync notice:', err.message);
+    } finally {
+      isPollingMessages = false;
     }
   };
 
-  // Run full numbers background sync once on server startup
-  setTimeout(() => {
-    console.log('[IPRN-Startup] Performing initial full numbers and ranges sync...');
-    syncWithIprn();
-  }, 1000);
-
-  // Poll real-time messages every 35 seconds to avoid KSI IPRN 429 rate limits
+  // Safe background polling interval every 75 seconds (respecting Cloudflare limits)
   setInterval(() => {
     pollIprnMessages();
-  }, 35000);
+  }, 75000);
 
-  // Endpoint to inject/simulate incoming SMS for live testing on real numbers
-  app.post('/api/simulate-sms', (req, res) => {
-    try {
-      const { number, rangeName, service, text } = req.body;
-      const data = readSyncData();
-      const rented = data.rented_numbers || [];
-      const targetNum = number || (rented.length > 0 ? rented[0].number : '+12025550199');
-      const targetRange = rangeName || (rented.length > 0 ? rented[0].rangeName : 'Standard Range');
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const serviceName = service || 'WhatsApp';
-      const msgContent = text || `Your ${serviceName} verification code is ${otpCode}. Do not share this code with anyone.`;
+  // Run full numbers background sync once on server startup (disabled to save rate limit)
+  // setTimeout(() => {
+  //   console.log('[IPRN-Startup] Performing initial full numbers and ranges sync...');
+  //   syncWithIprn();
+  // }, 1000);
 
-      const newLog = {
-        id: `MSG-LIVE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        number: targetNum,
-        termination: targetRange,
-        sid: serviceName.toUpperCase().slice(0, 8),
-        status: 'DELIVERED',
-        text: msgContent,
-        otp: otpCode,
-        timestamp: new Date().toISOString(),
-        cost: '0.0100 USD',
-        sender: `${serviceName} Auth`
-      };
-
-      data.active_sms_logs = [newLog, ...(data.active_sms_logs || [])];
-      data.last_updated = new Date().toISOString();
-      data.metrics.messages = data.active_sms_logs.length;
-      data.realtime_counters.totalMessages = data.active_sms_logs.length;
-
-      fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
-      broadcastUpdate(data);
-
-      res.json({
-        status: 'success',
-        message: 'Live test OTP message injected successfully.',
-        log: newLog
-      });
-    } catch (err: any) {
-      res.status(500).json({ status: 'error', message: err.message });
-    }
-  });
-
-  // Perform full numbers and ranges python sync every 15 minutes to stay updated
+  // Authentic sync only - simulated demo SMS generation removed as per user directive.
+  // Full numbers background sync runs periodically to keep range catalog in sync with KSI IPRN
   setInterval(() => {
-    console.log('[IPRN-Cycle] Syncing full numbers list...');
+    console.log('[IPRN-Cycle] Periodic check for new ranges & numbers...');
     syncWithIprn();
   }, 900000);
 

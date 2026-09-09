@@ -42,7 +42,7 @@ import {
   getRealSmsLogs,
 } from './utils/realtimeSmsService';
 
-import { clientDb, doc, onSnapshot } from './lib/firebaseClient';
+import { clientDb, doc, collection, onSnapshot } from './lib/firebaseClient';
 
 import {
   emptyMetricData,
@@ -82,7 +82,9 @@ export default function App() {
   const fetchIprnMetrics = async (isManual = false) => {
     if (isManual) setIsSyncing(true);
     try {
-      const res = await fetch('/api/dashboard-metrics');
+      const res = await fetch('/api/dashboard-metrics', {
+        headers: { 'Accept': 'application/json' }
+      });
       if (res.ok) {
         const json = await res.json();
         setSyncedData(json);
@@ -103,8 +105,9 @@ export default function App() {
           window.dispatchEvent(new Event('rented_numbers_updated'));
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch IPRN sync metrics from backend:', err);
+    } catch (err: any) {
+      // Graceful silent fallback to Firestore live subscription & localStorage
+      console.warn('Dashboard metrics fetch notice (using real-time Firestore stream):', err?.message || err);
     } finally {
       if (isManual) setIsSyncing(false);
     }
@@ -113,7 +116,10 @@ export default function App() {
   const triggerIprnSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      const res = await fetch('/api/trigger-sync', { 
+        method: 'POST',
+        headers: { 'Accept': 'application/json' }
+      });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
@@ -139,15 +145,15 @@ export default function App() {
         const newNotif: NotificationItem = {
           id: `NOTIF-SYNC-${Date.now()}`,
           title: 'IPRN Real-Time Sync',
-          message: json.message || 'Successfully fetched latest metrics from IPRN API via WebsiteDataSync.',
+          message: json.message || 'Successfully synchronized metrics with IPRN API.',
           time: 'Just now',
           read: false,
           type: 'success',
         };
         setNotifications((prev) => [newNotif, ...prev]);
       }
-    } catch (err) {
-      console.error('Error triggering IPRN sync:', err);
+    } catch (err: any) {
+      console.warn('Sync notice:', err?.message || err);
     } finally {
       setIsSyncing(false);
     }
@@ -156,11 +162,13 @@ export default function App() {
   useEffect(() => {
     fetchIprnMetrics();
 
-    // Attach real-time Firestore listener for immediate database updates
-    let unsubscribeFirestore: (() => void) | null = null;
+    // Attach real-time Firestore listeners for immediate database updates across sessions
+    let unsubscribeGlobal: (() => void) | null = null;
+
     try {
+      // Global Metrics, Active Numbers & Real-Time SMS Doc Listener
       const globalDocRef = doc(clientDb, 'settings', 'global');
-      unsubscribeFirestore = onSnapshot(globalDocRef, (snapshot) => {
+      unsubscribeGlobal = onSnapshot(globalDocRef, (snapshot) => {
         if (snapshot.exists()) {
           const json = snapshot.data();
           if (json) {
@@ -184,7 +192,10 @@ export default function App() {
           }
         }
       }, (error) => {
-        console.warn('Firestore real-time listener notice:', error);
+        // Fallback gracefully without console spamming if quota is paused
+        if (!error?.message?.includes('RESOURCE_EXHAUSTED')) {
+          console.warn('Real-time listener notice (falling back to REST sync):', error?.message || error);
+        }
       });
     } catch (e) {
       console.warn('Firestore real-time subscription fallback:', e);
@@ -196,7 +207,7 @@ export default function App() {
     }, 6000);
 
     return () => {
-      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (unsubscribeGlobal) unsubscribeGlobal();
       clearInterval(interval);
     };
   }, []);

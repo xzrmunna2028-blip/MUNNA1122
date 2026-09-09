@@ -155,8 +155,31 @@ class IPRNClient:
             except urllib.error.HTTPError as e:
                 self._update_rate_limits(e.headers)
                 if e.code == 429:
-                    logger.warning(f"IPRN API rate limited (429) on {endpoint}. Proceeding with dynamic live state.")
-                    return {"success": False, "error": "429 Rate Limited"}
+                    retry_seconds = 32
+                    try:
+                        err_body = e.read().decode('utf-8')
+                        parsed_err = json.loads(err_body)
+                        if parsed_err.get('retry_after'):
+                            retry_seconds = int(parsed_err['retry_after'])
+                        elif parsed_err.get('error', {}).get('message'):
+                            import re
+                            m = re.search(r'Retry after (\d+) seconds', parsed_err['error']['message'])
+                            if m:
+                                retry_seconds = int(m.group(1))
+                    except Exception:
+                        pass
+                    
+                    if self.rate_limit.retry_after > 0:
+                        retry_seconds = max(retry_seconds, self.rate_limit.retry_after)
+                    
+                    wait_time = max(30, retry_seconds) + (attempt * 15)
+                    if attempt < 3:
+                        logger.warning(f"IPRN API rate limited (429) on {endpoint}. Backing off for {wait_time}s (Attempt {attempt + 1}/4)...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.warning(f"IPRN API rate limited (429) on {endpoint} after retries. Proceeding with dynamic state.")
+                        return {"success": False, "error": "429 Rate Limited"}
                 else:
                     logger.warning(f"HTTP Error {e.code} on {endpoint}: {e}")
                     return {"success": False, "error": str(e)}
@@ -256,8 +279,8 @@ class IPRNClient:
         Fetch active SMS traffic stats and numbers directly from IPRN Live API.
         Prioritizes real-time messages and complete numbers lists.
         """
-        messages_resp = self.get_live_messages(max_pages=50)
-        numbers_resp = self.get_live_numbers(max_pages=100)
+        messages_resp = self.get_live_messages(max_pages=1)
+        numbers_resp = self.get_live_numbers(max_pages=1)
         
         return {
             "status": "success",

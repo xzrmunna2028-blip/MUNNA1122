@@ -317,9 +317,9 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredLogs.map((log) => (
+              {filteredLogs.map((log, idx) => (
                 <div
-                  key={log.id}
+                  key={`${log.id || 'log'}-${idx}`}
                   className="p-4 sm:p-5 bg-white border border-slate-200 rounded-2xl shadow-xs hover:border-slate-300 hover:shadow-md transition-all flex flex-col gap-3 group animate-fade-in"
                 >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -553,9 +553,9 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
           ) : (
             /* BORDERED MESSAGE CARDS (যেমন লাইভ টেস্টে বর্ডার আকারে দেখতে পাচ্ছো) */
             <div className="space-y-4">
-              {filteredLogs.map((log) => (
+              {filteredLogs.map((log, idx) => (
                 <div
-                  key={log.id}
+                  key={`${log.id || 'log'}-border-${idx}`}
                   className="p-4 sm:p-5 bg-white border border-slate-200 rounded-2xl shadow-xs hover:border-slate-300 hover:shadow-md transition-all flex flex-col gap-3 group animate-fade-in"
                 >
                   {/* Top metadata row with sender, recipient, route, status, time */}

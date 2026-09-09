@@ -14,7 +14,6 @@ import {
   Eye,
   RefreshCw,
 } from 'lucide-react';
-import { dispatchIncomingOtp } from '../utils/realtimeSmsService';
 import { OtpSessionModal } from './OtpSessionModal';
 import { YourMessagesModal } from './YourMessagesModal';
 import { RealSmsLog } from '../types';
@@ -130,13 +129,11 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   const handleReceiveLiveOtp = async () => {
     setIsReceivingOtp(true);
     try {
-      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      const res = await fetch('/api/active-sms');
       if (res.ok) {
         const json = await res.json();
-        if (json.data && json.data.active_sms_logs && json.data.active_sms_logs.length > 0) {
-          const latestLog = json.data.active_sms_logs[0];
-          localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
-          window.dispatchEvent(new Event('real_sms_updated'));
+        if (json.logs && json.logs.length > 0) {
+          const latestLog = json.logs[0];
           setSelectedLogForModal(latestLog as RealSmsLog);
           setInspectorModalOpen(true);
           setIsReceivingOtp(false);
@@ -144,13 +141,11 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
         }
       }
     } catch (e) {
-      console.warn('Sync trigger error:', e);
+      console.warn('Sync check error:', e);
     }
-
-    const newLog = dispatchIncomingOtp();
+    // Refresh live stream from backend
+    await handleSyncWithIprn();
     setIsReceivingOtp(false);
-    setSelectedLogForModal(newLog);
-    setInspectorModalOpen(true);
   };
 
   // Helper to extract OTP code safely

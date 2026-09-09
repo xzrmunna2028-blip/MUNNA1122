@@ -17,7 +17,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { RealSmsLog, RentedNumber } from '../types.js';
-import { dispatchIncomingOtp, getRealSmsLogs } from '../utils/realtimeSmsService.js';
+import { getRealSmsLogs } from '../utils/realtimeSmsService.js';
 
 interface OtpSessionModalProps {
   isOpen: boolean;
@@ -98,18 +98,30 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle trigger live OTP on this number via real-time Python IPRN sync
+  // Handle check for live OTP on this number via real-time gateway feed
   const handleTriggerLiveOtp = async () => {
     setIsReceivingOtp(true);
     try {
-      const res = await fetch('/api/trigger-sync', { method: 'POST' });
+      const res = await fetch('/api/active-sms');
       if (res.ok) {
         const json = await res.json();
-        if (json.data && json.data.active_sms_logs && json.data.active_sms_logs.length > 0) {
-          const latestLog = json.data.active_sms_logs[0];
-          localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
-          window.dispatchEvent(new Event('real_sms_updated'));
-          setSelectedLog(latestLog);
+        const logs = json.logs || [];
+        const targetNum = selectedNumber?.number || selectedLog?.number;
+        const matchingLog = logs.find((l: any) => {
+          if (!targetNum) return true;
+          const cleanTarget = targetNum.replace(/\D/g, '');
+          const cleanLogNum = String(l.number || '').replace(/\D/g, '');
+          return cleanTarget.includes(cleanLogNum) || cleanLogNum.includes(cleanTarget);
+        });
+
+        if (matchingLog) {
+          setSelectedLog(matchingLog);
+          setSessionLevel(2);
+          setIsReceivingOtp(false);
+          return;
+        } else if (logs.length > 0) {
+          // If no exact match yet, show newest authentic message from stream
+          setSelectedLog(logs[0]);
           setSessionLevel(2);
           setIsReceivingOtp(false);
           return;
@@ -119,13 +131,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
       console.warn('Live API sync trigger error:', e);
     }
 
-    const newLog = dispatchIncomingOtp({
-      targetNumber: selectedNumber?.number || selectedLog?.number,
-      targetRoute: selectedNumber?.range || selectedLog?.termination,
-    });
     setIsReceivingOtp(false);
-    setSelectedLog(newLog);
-    setSessionLevel(2);
   };
 
   // Copy helpers
@@ -284,9 +290,9 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/60 shadow-xs">
-                    {numberLogs.map((log) => (
+                    {numberLogs.map((log, idx) => (
                       <div
-                        key={log.id}
+                        key={`${log.id || 'log'}-${idx}`}
                         onClick={() => {
                           setSelectedLog(log);
                           setSessionLevel(2);

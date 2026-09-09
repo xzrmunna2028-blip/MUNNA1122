@@ -54,11 +54,7 @@ export const LiveTestSmsView: React.FC = () => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.filter((log: any) => {
-            if (!log || typeof log !== 'object') return false;
-            const id = String(log.id || '');
-            return !id.startsWith('MSG-LIVE-') && !id.startsWith('MSG-MOCK-') && !id.startsWith('MSG-DEMO-') && !id.startsWith('MSG-SIM-');
-          });
+          return parsed.filter((log: any) => log && typeof log === 'object');
         }
       }
       return [];
@@ -356,7 +352,7 @@ export const LiveTestSmsView: React.FC = () => {
 
   // Dynamic available countries from live logs
   const availableCountries = useMemo(() => {
-    const list = new Set<string>(['Bolivia', 'Cambodia', 'Ecuador', 'Benin', 'Azerbaijan', 'Algeria', 'United Kingdom']);
+    const list = new Set<string>(['Algeria', 'Azerbaijan', 'Belarus', 'Benin', 'Bolivia', 'Cambodia', 'Ecuador', 'United Kingdom']);
     liveLogs.forEach(l => {
       if (l.termination) {
         const countryName = l.termination.split(' - ')[0].trim();
@@ -370,6 +366,15 @@ export const LiveTestSmsView: React.FC = () => {
   const renderFlag = (termination: string) => {
     const term = (termination || '').toLowerCase();
     
+    // Belarus Flag (Red top, Green bottom)
+    if (term.includes('belarus')) {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="h-[65%] bg-[#C8313E]" />
+          <div className="h-[35%] bg-[#4AA65A]" />
+        </div>
+      );
+    }
     // Bolivia Flag (Red, Yellow, Green horizontal stripes)
     if (term.includes('bolivia')) {
       return (
@@ -450,7 +455,172 @@ export const LiveTestSmsView: React.FC = () => {
     );
   };
 
-  // Filter logs based on search and country
+  const [revealedOtpIds, setRevealedOtpIds] = useState<Set<string>>(new Set());
+
+  const toggleRevealOtp = (id: string) => {
+    setRevealedOtpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Render Social Media & Service Brand Logo
+  const renderBrandLogo = (sid?: string) => {
+    const s = (sid || '').toLowerCase().trim();
+    
+    // WhatsApp
+    if (s.includes('whatsapp')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.067-2.007-.478-1.579-.656-2.592-2.277-2.671-2.383-.077-.105-.638-.85-.638-1.623 0-.773.405-1.154.55-1.311.144-.158.313-.198.418-.198.105 0 .21.002.302.007.097.005.228-.037.357.272.132.318.451 1.101.492 1.183.041.082.069.178.014.288-.054.109-.082.178-.163.273-.082.095-.173.212-.247.285-.082.082-.167.172-.072.336.095.163.424.7.91 1.134.625.558 1.152.731 1.315.813.164.082.26-.072.356-.183.109-.126.465-.542.588-.727.123-.186.246-.155.41-.095.164.06.942.444 1.106.526.164.082.273.123.313.192.041.069.041.402-.103.807z" />
+          </svg>
+        </div>
+      );
+    }
+    // Telegram
+    if (s.includes('telegram')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#229ED9] text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z" />
+          </svg>
+        </div>
+      );
+    }
+    // Google
+    if (s.includes('google') || s.includes('gmail')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-white border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 shadow-2xs">
+          <svg className="w-3 h-3" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+          </svg>
+        </div>
+      );
+    }
+    // Snapchat / Synapse
+    if (s.includes('snap') || s.includes('synapse')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#FFFC00] text-black flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
+          👻
+        </div>
+      );
+    }
+    // TikTok
+    if (s.includes('tiktok')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          🎵
+        </div>
+      );
+    }
+    // Facebook / Meta
+    if (s.includes('facebook') || s.includes('meta')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#1877F2] text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[11px]">
+          f
+        </div>
+      );
+    }
+    // Apple
+    if (s.includes('apple') || s.includes('icloud')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          
+        </div>
+      );
+    }
+    // Amazon
+    if (s.includes('amazon')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#FF9900] text-slate-900 flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
+          a
+        </div>
+      );
+    }
+    // Microsoft
+    if (s.includes('microsoft')) {
+      return (
+        <div className="w-5 h-5 rounded-xs bg-white border border-slate-200 p-0.5 flex flex-wrap gap-0.5 items-center justify-center shrink-0 shadow-2xs">
+          <div className="w-1.5 h-1.5 bg-[#F25022]" />
+          <div className="w-1.5 h-1.5 bg-[#7FBA00]" />
+          <div className="w-1.5 h-1.5 bg-[#00A4EF]" />
+          <div className="w-1.5 h-1.5 bg-[#FFB900]" />
+        </div>
+      );
+    }
+    // Binance
+    if (s.includes('binance')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#F3BA2F] text-slate-950 flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
+          ◆
+        </div>
+      );
+    }
+    // Netflix
+    if (s.includes('netflix')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-black text-[#E50914] flex items-center justify-center shrink-0 shadow-2xs font-black text-[11px]">
+          N
+        </div>
+      );
+    }
+    // Uber
+    if (s.includes('uber')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          Uber
+        </div>
+      );
+    }
+    // IMO
+    if (s.includes('imo')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#00AEEF] text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[9px]">
+          imo
+        </div>
+      );
+    }
+    // Instagram
+    if (s.includes('instagram')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          📸
+        </div>
+      );
+    }
+    // Twitter / X
+    if (s.includes('twitter') || s.includes('x.com')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          𝕏
+        </div>
+      );
+    }
+    // Default fallback initial badge
+    const initial = (sid || 'A').charAt(0).toUpperCase();
+    return (
+      <div className="w-5 h-5 rounded-md bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/60 dark:text-lime-400 font-black text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
+        {initial}
+      </div>
+    );
+  };
+
+  // Helper to mask OTP code in message body text (matches Switchfy / KSI IPRN live test design)
+  const renderMaskedMessageBody = (text: string, isRevealed: boolean) => {
+    if (!text) return '';
+    if (isRevealed) return text;
+    // Mask G-XXXXXX or 4-8 digit codes in body text with asterisks
+    return text.replace(/\b([0-9]{4,8})\b/g, '••••••').replace(/G-([0-9]{4,8})/gi, 'G-••••••');
+  };
   const filteredLogs = useMemo(() => {
     return liveLogs.filter(log => {
       const termMatch = 
@@ -700,7 +870,8 @@ export const LiveTestSmsView: React.FC = () => {
             paginatedLogs.map((log, idx) => {
               const logKey = log.id || `${log.number}-${idx}`;
               const cleanNumber = log.number ? log.number.replace(/^\+/, '') : '';
-              const senderInitial = (log.sid || 'A').charAt(0).toUpperCase();
+              const rawOtp = log.otp || (log.text && (log.text.match(/\b\d{4,8}\b/) || [''])[0]) || '';
+              const isRevealed = revealedOtpIds.has(logKey);
 
               return (
                 <div 
@@ -735,11 +906,9 @@ export const LiveTestSmsView: React.FC = () => {
                         </span>
                       </div>
 
-                      {/* Line 3: Sender badge + Cost pill */}
+                      {/* Line 3: Social Media / App Brand Logo + Sender badge + Cost pill */}
                       <div className="flex items-center gap-2 pt-0.5">
-                        <div className="w-4 h-4 rounded-xs bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/60 dark:text-lime-400 font-black text-[10px] flex items-center justify-center shrink-0">
-                          {senderInitial}
-                        </div>
+                        {renderBrandLogo(log.sid)}
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                           {log.sid || 'AUTHMSG'}
                         </span>
@@ -748,10 +917,58 @@ export const LiveTestSmsView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Line 4: Message Body with masked OTP */}
+                      {/* Line 4: Message Body with masked OTP text (matching Switchfy / KSI panel) */}
                       <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed pt-1 select-text">
-                        {maskSmsOtp(log.text)}
+                        {renderMaskedMessageBody(log.text, isRevealed)}
                       </p>
+
+                      {/* Line 5: Masked / Hidden OTP Pill with Eye Toggle and Copy */}
+                      {rawOtp && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                            OTP CODE:
+                          </span>
+                          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold text-xs tracking-wider shadow-2xs">
+                            <span className={isRevealed ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 tracking-widest'}>
+                              {isRevealed ? rawOtp : '••••••'}
+                            </span>
+                            
+                            {/* Toggle Reveal / Hide */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleRevealOtp(logKey);
+                              }}
+                              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer p-0.5"
+                              title={isRevealed ? 'Hide OTP' : 'Show OTP'}
+                            >
+                              {isRevealed ? (
+                                <EyeOff className="w-3.5 h-3.5" />
+                              ) : (
+                                <Eye className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+
+                            {/* Copy OTP */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(rawOtp);
+                                setCopiedId(`otp-${logKey}`);
+                                setTimeout(() => setCopiedId(null), 1800);
+                              }}
+                              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer p-0.5"
+                              title="Copy Real OTP"
+                            >
+                              {copiedId === `otp-${logKey}` ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Clipboard className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

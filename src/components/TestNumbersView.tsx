@@ -29,10 +29,38 @@ interface TestNumberItem {
   flag: string;
 }
 
+const MASTER_TEST_ITEMS: TestNumberItem[] = [
+  { id: 'TEST-TERM_ALGERIA_MOBILIS', name: 'Algeria - Mobilis', code: '+213661', number: '+213661204891', rate: '0.0095 USD', flag: '🇩🇿' },
+  { id: 'TEST-TERM_ALGERIA_DJEZZY', name: 'Algeria - Djezzy', code: '+213662', number: '+213662589102', rate: '0.0098 USD', flag: '🇩🇿' },
+  { id: 'TEST-TERM_AZERBAIJAN_BAKCELL_3', name: 'Azerbaijan - Bakcell 3', code: '+994997', number: '+994997780131', rate: '0.0096 USD', flag: '🇦🇿' },
+  { id: 'TEST-TERM_BELARUS_MTS_1', name: 'Belarus - MTS 1', code: '+37533', number: '+375333037042', rate: '0.0100 USD', flag: '🇧🇾' },
+  { id: 'TEST-TERM_BENIN_MTN_1', name: 'Benin - MTN 1', code: '+22956', number: '+22956012489', rate: '0.0120 USD', flag: '🇧🇯' },
+  { id: 'TEST-TERM_BENIN_MTN_2', name: 'Benin - MTN 2', code: '+22956', number: '+22956184712', rate: '0.0125 USD', flag: '🇧🇯' },
+  { id: 'TEST-TERM_BOLIVIA_ENTEL_1', name: 'Bolivia - Entel 1', code: '+59178', number: '+59178912340', rate: '0.0110 USD', flag: '🇧🇴' },
+  { id: 'TEST-TERM_BOLIVIA_TIGO_2', name: 'Bolivia - Tigo 2', code: '+59178', number: '+59178865412', rate: '0.0115 USD', flag: '🇧🇴' },
+  { id: 'TEST-TERM_CAMBODIA_860', name: 'Cambodia 860', code: '+85531', number: '+855313910488', rate: '0.0090 USD', flag: '🇰🇭' },
+  { id: 'TEST-TERM_ECUADOR_CLARO_1', name: 'Ecuador - Claro 1', code: '+59398', number: '+593987145236', rate: '0.0105 USD', flag: '🇪🇨' },
+  { id: 'TEST-TERM_ECUADOR_MOVISTAR', name: 'Ecuador - Movistar', code: '+59398', number: '+593986741258', rate: '0.0100 USD', flag: '🇪🇨' },
+  { id: 'TEST-TERM_UNITED_KINGDOM_VODAFONE', name: 'United Kingdom - Vodafone', code: '+44791', number: '+447911123456', rate: '0.0150 USD', flag: '🇬🇧' },
+  { id: 'TEST-TERM_UNITED_KINGDOM_O2', name: 'United Kingdom - O2', code: '+44791', number: '+447912654321', rate: '0.0145 USD', flag: '🇬🇧' },
+];
+
+const getCountryFlag = (name?: string, country?: string) => {
+  const s = `${name || ''} ${country || ''}`.toLowerCase();
+  if (s.includes('algeria')) return '🇩🇿';
+  if (s.includes('azerbaijan')) return '🇦🇿';
+  if (s.includes('belarus')) return '🇧🇾';
+  if (s.includes('benin')) return '🇧🇯';
+  if (s.includes('bolivia')) return '🇧🇴';
+  if (s.includes('cambodia')) return '🇰🇭';
+  if (s.includes('ecuador')) return '🇪🇨';
+  if (s.includes('united kingdom') || s.includes('uk')) return '🇬🇧';
+  if (s.includes('bangladesh')) return '🇧🇩';
+  return '🌐';
+};
+
 export const TestNumbersView: React.FC = () => {
-  const [testNumbersData, setTestNumbersData] = useState<TestNumberItem[]>(() => {
-    return ensureDefaultTestNumbers();
-  });
+  const [testNumbersData, setTestNumbersData] = useState<TestNumberItem[]>(MASTER_TEST_ITEMS);
 
   useEffect(() => {
     const fetchLiveNumbers = async () => {
@@ -44,10 +72,10 @@ export const TestNumbersView: React.FC = () => {
             const mapped: TestNumberItem[] = data.numbers.map((n: any) => ({
               id: n.id,
               name: n.rangeName || n.term || n.range,
-              code: n.number.startsWith('+') ? n.number.substring(1, 4) : n.number.substring(0, 3),
+              code: n.number.startsWith('+') ? n.number.substring(0, 7) : `+${n.number.substring(0, 6)}`,
               number: n.number,
               rate: n.cost || n.rate || '0.0096 USD',
-              flag: (n.country === 'Azerbaijan' || (n.rangeName && n.rangeName.includes('Azerbaijan'))) ? '🇦🇿' : (n.country === 'Cambodia' || (n.rangeName && n.rangeName.includes('Cambodia'))) ? '🇰🇭' : n.country === 'Ecuador' ? '🇪🇨' : n.country === 'Benin' ? '🇧🇯' : n.country === 'Bolivia' ? '🇧🇴' : n.country === 'Bangladesh' ? '🇧🇩' : n.country === 'United Kingdom' ? '🇬🇧' : n.country === 'Algeria' ? '🇩🇿' : '🌐'
+              flag: getCountryFlag(n.rangeName || n.range, n.country)
             }));
             setTestNumbersData(mapped);
           }
@@ -288,9 +316,9 @@ export const TestNumbersView: React.FC = () => {
         {/* Dynamic List matching the screenshot style */}
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {filteredItems.length > 0 ? (
-            filteredItems.map((item) => (
+            filteredItems.map((item, idx) => (
               <div
-                key={item.id}
+                key={`${item.id || item.number}-${idx}`}
                 className="p-5 flex items-center justify-between hover:bg-slate-50/40 dark:hover:bg-slate-950/10 transition-colors animate-fade-in"
               >
                 {/* Left Side: Name, Prefix, Number & Rate */}

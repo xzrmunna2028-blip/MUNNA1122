@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   RotateCw,
@@ -18,10 +18,16 @@ import {
   AlertCircle,
   Zap,
   Eye,
+  Copy,
+  ShieldCheck,
+  Radio,
+  Clock,
+  Search,
 } from 'lucide-react';
-import { ensureDefaultRentedNumbers } from '../utils/realtimeSmsService';
+import { ensureDefaultRentedNumbers, getRealSmsLogs } from '../utils/realtimeSmsService';
 import { OtpSessionModal } from './OtpSessionModal.js';
 import { RentedNumber, RealSmsLog } from '../types.js';
+import { KSI_MASTER_TERMINATIONS } from '../data/ksiMasterRanges.ts';
 
 interface TerminationOption {
   code: string;
@@ -32,6 +38,8 @@ interface TerminationOption {
   limit: string;
   label: string;
 }
+
+const DEFAULT_MASTER_TERMINATIONS: TerminationOption[] = KSI_MASTER_TERMINATIONS;
 
 export const MyNumbersView: React.FC = () => {
   const [rentedNumbers, setRentedNumbers] = useState<RentedNumber[]>(() => {
@@ -56,8 +64,21 @@ export const MyNumbersView: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.numbers && Array.isArray(data.numbers)) {
-          setRentedNumbers(data.numbers.map((n: any) => ({ ...n, cost: n.cost || n.rate || '0.0096 USD' })));
-          localStorage.setItem('rented_numbers', JSON.stringify(data.numbers));
+          const seen = new Set<string>();
+          const uniqueNumbers: RentedNumber[] = [];
+          data.numbers.forEach((n: any, idx: number) => {
+            const key = n.number || n.id || `NUM-${idx}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueNumbers.push({
+                ...n,
+                id: n.id || `NUM-${idx}`,
+                cost: n.cost || n.rate || '0.0096 USD'
+              });
+            }
+          });
+          setRentedNumbers(uniqueNumbers);
+          localStorage.setItem('rented_numbers', JSON.stringify(uniqueNumbers));
           if (data.last_updated) {
             setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
           }
@@ -71,8 +92,92 @@ export const MyNumbersView: React.FC = () => {
     if (local !== null) {
       try {
         const parsed: RentedNumber[] = JSON.parse(local);
-        setRentedNumbers(parsed.map((n) => ({ ...n, cost: n.cost || (n as any).rate || '0.0096 USD' })));
+        const seen = new Set<string>();
+        const uniqueParsed: RentedNumber[] = [];
+        parsed.forEach((n: any, idx: number) => {
+          const key = n.number || n.id || `NUM-${idx}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueParsed.push({
+              ...n,
+              id: n.id || `NUM-${idx}`,
+              cost: n.cost || n.rate || '0.0096 USD'
+            });
+          }
+        });
+        setRentedNumbers(uniqueParsed);
       } catch (e) {}
+    }
+  };
+
+  // Live Real-Time SMS & OTP logs state
+  const [realSmsLogs, setRealSmsLogs] = useState<RealSmsLog[]>(() => getRealSmsLogs());
+  const [copiedOtpId, setCopiedOtpId] = useState<string | null>(null);
+
+  const handleCopyOtp = (code: string, id: string) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedOtpId(id);
+    setTimeout(() => {
+      setCopiedOtpId(null);
+    }, 2000);
+  };
+
+  const normalizePhone = (num?: string): string => {
+    if (!num) return '';
+    return num.replace(/[^0-9]/g, '');
+  };
+
+  const extractOtpCode = (log?: RealSmsLog | null): string => {
+    if (!log) return '';
+    if (log.otp && log.otp.trim().length > 0) return log.otp.trim();
+    if (!log.text) return '';
+    const gMatch = log.text.match(/G-(\d{4,8})/i);
+    if (gMatch) return gMatch[1];
+    const codeMatch = log.text.match(/(?:code|is|pin|verification|otp|code:)[:\s-]*([0-9]{4,8})/i);
+    if (codeMatch) return codeMatch[1];
+    const digits = log.text.match(/\b([0-9]{4,8})\b/);
+    if (digits) return digits[1];
+    return '';
+  };
+
+  const getLatestOtpForNumber = (numStr?: string): RealSmsLog | null => {
+    const clean = normalizePhone(numStr);
+    if (!clean) return null;
+    return realSmsLogs.find((l) => {
+      const logNum = normalizePhone(l.number);
+      return logNum === clean || clean.endsWith(logNum) || logNum.endsWith(clean);
+    }) || null;
+  };
+
+  const getServiceStyle = (sid?: string) => {
+    const service = (sid || '').toLowerCase();
+    if (service.includes('whatsapp')) return { bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20', dot: 'bg-emerald-500', name: 'WhatsApp' };
+    if (service.includes('telegram')) return { bg: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20', dot: 'bg-sky-500', name: 'Telegram' };
+    if (service.includes('google')) return { bg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20', dot: 'bg-rose-500', name: 'Google' };
+    if (service.includes('tiktok')) return { bg: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20', dot: 'bg-pink-500', name: 'TikTok' };
+    if (service.includes('facebook')) return { bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20', dot: 'bg-blue-500', name: 'Facebook' };
+    if (service.includes('binance') || service.includes('crypto')) return { bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20', dot: 'bg-amber-500', name: 'Binance' };
+    if (service.includes('instagram')) return { bg: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/20', dot: 'bg-fuchsia-500', name: 'Instagram' };
+    if (service.includes('apple')) return { bg: 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20', dot: 'bg-slate-500', name: 'Apple' };
+    return { bg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20', dot: 'bg-indigo-500', name: sid || 'OTP Service' };
+  };
+
+  const formatRelativeTime = (timestamp?: string): string => {
+    if (!timestamp) return '';
+    try {
+      const time = new Date(timestamp).getTime();
+      if (isNaN(time)) return timestamp;
+      const diffSec = Math.floor((Date.now() - time) / 1000);
+      if (diffSec < 10) return 'Just now';
+      if (diffSec < 60) return `${diffSec}s ago`;
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHour = Math.floor(diffMin / 60);
+      if (diffHour < 24) return `${diffHour}h ago`;
+      return new Date(time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch (e) {
+      return timestamp;
     }
   };
 
@@ -81,15 +186,22 @@ export const MyNumbersView: React.FC = () => {
     const handleSync = () => {
       fetchNumbersFromApi();
     };
+    const handleSmsUpdate = () => {
+      setRealSmsLogs(getRealSmsLogs());
+    };
+
     window.addEventListener('rented_numbers_updated', handleSync);
+    window.addEventListener('real_sms_updated', handleSmsUpdate);
     
-    // Auto-poll live numbers feed from IPRN API
+    // Auto-poll live numbers & SMS feed
     const interval = setInterval(() => {
       fetchNumbersFromApi();
-    }, 4000);
+      setRealSmsLogs(getRealSmsLogs());
+    }, 3000);
 
     return () => {
       window.removeEventListener('rented_numbers_updated', handleSync);
+      window.removeEventListener('real_sms_updated', handleSmsUpdate);
       clearInterval(interval);
     };
   }, []);
@@ -147,6 +259,7 @@ export const MyNumbersView: React.FC = () => {
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTerminationCode, setSelectedTerminationCode] = useState<string>('');
+  const [termSearchQuery, setTermSearchQuery] = useState<string>('');
   const [paymentTerm, setPaymentTerm] = useState<string>('default');
   const [numCount, setNumCount] = useState<number>(1);
   const [numInputStr, setNumInputStr] = useState<string>('1');
@@ -181,7 +294,28 @@ export const MyNumbersView: React.FC = () => {
     }
   }, [deleteModalStep]);
 
-  const [terminations, setTerminations] = useState<TerminationOption[]>([]);
+  const [terminations, setTerminations] = useState<TerminationOption[]>(DEFAULT_MASTER_TERMINATIONS);
+
+  const filteredTerminations = useMemo(() => {
+    if (!termSearchQuery.trim()) return terminations;
+    const q = termSearchQuery.toLowerCase().trim();
+    return terminations.filter(t => 
+      (t.country && t.country.toLowerCase().includes(q)) ||
+      (t.operator && t.operator.toLowerCase().includes(q)) ||
+      (t.label && t.label.toLowerCase().includes(q)) ||
+      (t.code && t.code.toLowerCase().includes(q))
+    );
+  }, [terminations, termSearchQuery]);
+
+  const groupedTerminations: Record<string, TerminationOption[]> = useMemo(() => {
+    const groups: Record<string, TerminationOption[]> = {};
+    filteredTerminations.forEach(t => {
+      const c = t.country || 'Global';
+      if (!groups[c]) groups[c] = [];
+      groups[c].push(t);
+    });
+    return groups;
+  }, [filteredTerminations]);
 
   // Fetch real live terminations from API
   const fetchTerminations = async () => {
@@ -189,8 +323,12 @@ export const MyNumbersView: React.FC = () => {
       const res = await fetch('/api/terminations');
       if (res.ok) {
         const data = await res.json();
-        if (data.terminations && Array.isArray(data.terminations)) {
-          setTerminations(data.terminations);
+        if (data.terminations && Array.isArray(data.terminations) && data.terminations.length > 0) {
+          // Merge with master catalog to guarantee no range is ever dropped
+          const termMap = new Map<string, TerminationOption>();
+          DEFAULT_MASTER_TERMINATIONS.forEach(t => termMap.set(t.code, t));
+          data.terminations.forEach((t: any) => termMap.set(t.code, t));
+          setTerminations(Array.from(termMap.values()));
           return;
         }
       }
@@ -198,9 +336,10 @@ export const MyNumbersView: React.FC = () => {
       console.warn('Failed to fetch /api/terminations:', e);
     }
 
-    // Fallback: derive dynamically from rentedNumbers state
+    // Master Catalog is ALWAYS guaranteed even if active rented table is empty or deleted
+    const termMap = new Map<string, TerminationOption>();
+    DEFAULT_MASTER_TERMINATIONS.forEach(t => termMap.set(t.code, t));
     if (rentedNumbers && rentedNumbers.length > 0) {
-      const termMap = new Map<string, TerminationOption>();
       rentedNumbers.forEach((n) => {
         const rangeName = n.rangeName || n.range || n.term || 'IPRN Range';
         const code = rangeName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
@@ -210,16 +349,14 @@ export const MyNumbersView: React.FC = () => {
             country: n.country || 'Global',
             operator: n.operator || 'Carrier',
             available: 'Unlimited available',
-            rate: n.cost || n.rate || '0.0000 USD',
+            rate: n.cost || n.rate || '0.0096 USD',
             limit: n.portalLimit || '10,000',
             label: `${rangeName} (Unlimited available)`,
           });
         }
       });
-      setTerminations(Array.from(termMap.values()));
-    } else {
-      setTerminations([]);
     }
+    setTerminations(Array.from(termMap.values()));
   };
 
   useEffect(() => {
@@ -518,85 +655,148 @@ export const MyNumbersView: React.FC = () => {
           {/* Render Active Numbers Card List or Empty State Box */}
           {filteredNumbers.length > 0 ? (
             <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/10 divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[650px] overflow-y-auto">
-              {filteredNumbers.map((n) => (
-                <div
-                  key={n.id}
-                  className="p-5 bg-white dark:bg-slate-900 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors relative animate-fade-in group cursor-pointer"
-                  onClick={() => {
-                    setSessionSelectedNumber(n);
-                    setSessionSelectedLog(null);
-                    setSessionModalOpen(true);
-                  }}
-                >
-                  <div className="flex items-start gap-4">
-                    {/* Checkbox on left */}
-                    <input
-                      type="checkbox"
-                      checked={!!selectedRows[n.id]}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => handleRowSelect(n.id, e.target.checked)}
-                      className="w-4.5 h-4.5 rounded text-[#65a30d] focus:ring-[#65a30d] border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 transition cursor-pointer mt-0.5"
-                    />
+              {filteredNumbers.map((n, idx) => {
+                const latestLog = getLatestOtpForNumber(n.number);
+                const otpCode = extractOtpCode(latestLog);
+                const serviceInfo = getServiceStyle(
+                  latestLog?.sid ||
+                  (latestLog?.text?.includes('WhatsApp') ? 'WhatsApp' :
+                   latestLog?.text?.includes('Google') ? 'Google' :
+                   latestLog?.text?.includes('Telegram') ? 'Telegram' :
+                   latestLog?.text?.includes('TikTok') ? 'TikTok' :
+                   latestLog?.text?.includes('Facebook') ? 'Facebook' : '')
+                );
 
-                    {/* Middle info content area */}
-                    <div className="flex-1 space-y-2">
-                      {/* Top row: Number & Term Badge & Action Buttons */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-black text-slate-900 dark:text-white tracking-wide font-mono group-hover:text-lime-600 dark:group-hover:text-lime-400 transition-colors">
-                            {n.number}
-                          </span>
-                          <span className="text-[10px] font-black bg-lime-100 dark:bg-lime-950/40 text-lime-700 dark:text-lime-400 px-2 py-0.5 rounded select-none">
-                            {n.term || '1/1'}
-                          </span>
+                return (
+                  <div
+                    key={`${n.id || n.number}-${idx}`}
+                    className="p-5 bg-white dark:bg-slate-900 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors relative animate-fade-in group cursor-pointer"
+                    onClick={() => {
+                      setSessionSelectedNumber(n);
+                      setSessionSelectedLog(latestLog);
+                      setSessionModalOpen(true);
+                    }}
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Checkbox on left */}
+                      <input
+                        type="checkbox"
+                        checked={!!selectedRows[n.id]}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleRowSelect(n.id, e.target.checked)}
+                        className="w-4.5 h-4.5 rounded text-[#65a30d] focus:ring-[#65a30d] border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 transition cursor-pointer mt-0.5"
+                      />
+
+                      {/* Middle info content area */}
+                      <div className="flex-1 space-y-2">
+                        {/* Top row: Number & Term Badge & Action Area */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-slate-900 dark:text-white tracking-wide font-mono group-hover:text-lime-600 dark:group-hover:text-lime-400 transition-colors">
+                              {n.number}
+                            </span>
+                            <span className="text-[10px] font-black bg-lime-100 dark:bg-lime-950/40 text-lime-700 dark:text-lime-400 px-2 py-0.5 rounded select-none">
+                              {n.term || '1/1'}
+                            </span>
+                          </div>
+
+                          {/* Right Side: LIVE OTP CODE & SERVICE NAME OR LISTENING STATUS */}
+                          <div className="flex flex-col items-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            {latestLog && (otpCode || latestLog.text) ? (
+                              <div className="flex flex-col items-end gap-1">
+                                {/* Service Name & Arrival Time */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border tracking-wide uppercase shadow-2xs ${serviceInfo.bg}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${serviceInfo.dot} animate-ping`} />
+                                    {serviceInfo.name}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                                    {formatRelativeTime(latestLog.timestamp)}
+                                  </span>
+                                </div>
+
+                                {/* Prominent High-Visibility Live OTP Code with Instant 1-Click Copy */}
+                                {otpCode ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyOtp(otpCode, n.id)}
+                                    className="group/otp inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-lime-500/15 hover:bg-lime-500/25 border border-lime-500/40 text-lime-700 dark:text-lime-300 font-mono font-black text-sm tracking-widest shadow-xs transition-all active:scale-95 cursor-pointer"
+                                    title="Click to copy OTP code"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5 text-lime-600 dark:text-lime-400" />
+                                    <span>{otpCode}</span>
+                                    {copiedOtpId === n.id ? (
+                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 animate-fade-in">
+                                        <Check className="w-3 h-3" />
+                                        <span>Copied!</span>
+                                      </span>
+                                    ) : (
+                                      <Copy className="w-3 h-3 opacity-60 group-hover/otp:opacity-100 transition-opacity" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[160px]">
+                                    {latestLog.text}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              /* Standby / Listening status */
+                              <div className="flex flex-col items-end gap-0.5">
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-slate-500 dark:text-slate-400 text-[11px] font-medium">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse" />
+                                  <span>Live Listening</span>
+                                </div>
+                                <span className="text-[10px] text-slate-400">Waiting for OTP...</span>
+                              </div>
+                            )}
+
+                            {/* View full message logs modal trigger */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSessionSelectedNumber(n);
+                                setSessionSelectedLog(latestLog);
+                                setSessionModalOpen(true);
+                              }}
+                              className="text-[10px] font-bold text-slate-400 hover:text-lime-600 dark:hover:text-lime-400 transition-colors inline-flex items-center gap-0.5 cursor-pointer mt-0.5"
+                              title="View message logs"
+                            >
+                              <Eye className="w-2.5 h-2.5" />
+                              <span>History</span>
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSessionSelectedNumber(n);
-                              setSessionSelectedLog(null);
-                              setSessionModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold transition cursor-pointer"
-                            title="View messages for this number"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>Messages</span>
-                          </button>
-                        </div>
-                      </div>
+                        {/* Second row: Operator & range subtitle */}
+                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                          {n.range}
+                        </p>
 
-                      {/* Second row: Operator & range subtitle */}
-                      <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
-                        {n.range}
-                      </p>
-
-                      {/* Third row: Info Grid with Rate and Last Message only, aligned left and right */}
-                      <div className="flex items-center justify-between pt-1 text-xs">
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                            A2P RATE
-                          </span>
-                          <span className="text-xs font-bold text-lime-600 dark:text-lime-500">
-                            {n.cost || (n as any).rate || '0.0096 USD'}
-                          </span>
-                        </div>
-                        <div className="space-y-0.5 text-right">
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                            LAST SMS
-                          </span>
-                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                            {n.lastMessage || 'Never'}
-                          </span>
+                        {/* Third row: Info Grid with Rate and Last Message only, aligned left and right */}
+                        <div className="flex items-center justify-between pt-1 text-xs">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                              A2P RATE
+                            </span>
+                            <span className="text-xs font-bold text-lime-600 dark:text-lime-500">
+                              {n.cost || (n as any).rate || '0.0096 USD'}
+                            </span>
+                          </div>
+                          <div className="space-y-0.5 text-right">
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                              LAST SMS
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              {latestLog ? formatRelativeTime(latestLog.timestamp) : (n.lastMessage || 'Never')}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             /* Empty State Box */
@@ -705,10 +905,37 @@ export const MyNumbersView: React.FC = () => {
               {/* Modal Body Container */}
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
                 {/* Dropdown "Select termination" */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                    Select termination
-                  </label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                      Select termination
+                    </label>
+                    <span className="text-[10px] font-bold text-lime-600 dark:text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
+                      {terminations.length} Ranges · 86 Countries
+                    </span>
+                  </div>
+
+                  {/* Fast Search Filter input */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={termSearchQuery}
+                      onChange={(e) => setTermSearchQuery(e.target.value)}
+                      placeholder="Filter country, operator or prefix (e.g. Bangladesh, Vodafone, MTN)..."
+                      className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-white text-xs placeholder:text-slate-400 focus:ring-1 focus:ring-[#65a30d] focus:border-[#65a30d] transition"
+                    />
+                    {termSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setTermSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
                   <div className="relative">
                     <select
                       value={selectedTerminationCode}
@@ -716,16 +943,20 @@ export const MyNumbersView: React.FC = () => {
                       className="w-full appearance-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-[#65a30d] focus:border-[#65a30d] transition pr-10 cursor-pointer"
                     >
                       <option value="">-- Choose a termination --</option>
-                      {terminations.map((t) => (
-                        <option key={t.code} value={t.code}>
-                          {t.label}
-                        </option>
+                      {(Object.entries(groupedTerminations) as [string, TerminationOption[]][]).map(([country, items]) => (
+                        <optgroup key={country} label={`${country} (${items.length} ${items.length === 1 ? 'range' : 'ranges'})`}>
+                          {items.map((t) => (
+                            <option key={t.code} value={t.code}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                     <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                   <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
-                    Showing all {terminations.length} active real range sources synchronized from IPRN API.
+                    Showing {filteredTerminations.length} of {terminations.length} active real range sources synchronized from IPRN API across {Object.keys(groupedTerminations).length} countries.
                   </p>
                 </div>
 

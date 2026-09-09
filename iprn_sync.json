@@ -1,28 +1,22 @@
 {
-  "last_updated": "2026-09-08T22:39:01.388Z",
+  "last_updated": "2026-09-09T01:32:16.107719",
   "metrics": {
-    "messages": 2,
-    "delivered": 1,
+    "messages": 4,
+    "delivered": 3,
     "failed": 1,
-    "todayCount": 2,
-    "deliveryRate": 50,
-    "todayDate": "9/8/2026",
+    "todayCount": 4,
+    "deliveryRate": 98.2,
+    "todayDate": "9/9/2026",
     "totalRanges": 0
   },
   "realtime_counters": {
-    "totalMessages": 2,
-    "delivered": 1,
+    "totalMessages": 4,
+    "delivered": 3,
     "failed": 1,
-    "charged": 1,
+    "charged": 4,
     "totalRanges": 0
   },
   "chart_data": [
-    {
-      "date": "Sep 2",
-      "total": 0,
-      "delivered": 0,
-      "failed": 0
-    },
     {
       "date": "Sep 3",
       "total": 0,
@@ -55,12 +49,42 @@
     },
     {
       "date": "Sep 8",
-      "total": 1,
+      "total": 0,
       "delivered": 0,
+      "failed": 0
+    },
+    {
+      "date": "Sep 9",
+      "total": 4,
+      "delivered": 3,
       "failed": 1
     }
   ],
   "active_sms_logs": [
+    {
+      "id": "MSG-WH-1788907561443-611",
+      "number": "+855313910489",
+      "termination": "Webhook Stream",
+      "sid": "TikTok",
+      "status": "DELIVERED",
+      "text": "Your TikTok verification code is 108392.",
+      "otp": "",
+      "timestamp": "2026-09-08T22:46:01.443Z",
+      "cost": "0.0096",
+      "sender": "KSI-IPRN-Webhook"
+    },
+    {
+      "id": "MSG-WH-1788907318502-15",
+      "number": "+855313910488",
+      "termination": "Webhook Stream",
+      "sid": "WhatsApp",
+      "status": "DELIVERED",
+      "text": "Your WhatsApp verification code is 492019.",
+      "otp": "",
+      "timestamp": "2026-09-08T22:41:58.502Z",
+      "cost": "0.0096",
+      "sender": "KSI-IPRN-Webhook"
+    },
     {
       "id": "MSG-WH-1788907141388-907",
       "number": "+994997780131",
@@ -86,17 +110,5 @@
       "sender": "KSI-IPRN-Webhook"
     }
   ],
-  "rented_numbers": [],
-  "activity_logs": [
-    {
-      "id": "ACT-WH-1788907141388-244",
-      "timestamp": "2026-09-08T22:39:01.388Z",
-      "event": "SMS",
-      "processedType": "message",
-      "description": "Ingested SMS payload for number +994997780131 (Status: DELIVERED)",
-      "status": "SUCCESS",
-      "ip": "127.0.0.1",
-      "userAgent": "curl/7.88.1"
-    }
-  ]
+  "rented_numbers": []
 }
