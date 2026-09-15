@@ -58,6 +58,7 @@ import { InvitationManagerView } from './InvitationManagerView';
 import { AdminRangeCountryManager } from './AdminRangeCountryManager';
 import { AdminUpdateNoticeManager } from './AdminUpdateNoticeManager';
 import { NotificationItem } from '../types';
+import { safeJson, safeFetchJson } from '../utils/safeFetch';
 
 export interface AdminUserRecord extends RegisteredUser {
   id: string;
@@ -340,11 +341,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   // Real-Time Server Synchronization Hook
   useEffect(() => {
-    // 1. Fetch live pending users
-    fetch('/api/pending-users')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.pending)) {
+    // 1. Fetch live pending users safely
+    safeFetchJson<any>('/api/pending-users', { method: 'GET' }, { success: false, pending: [] })
+      .then(({ ok, data }) => {
+        if (ok && data?.success && Array.isArray(data.pending)) {
           const mapped: AdminUserRecord[] = data.pending.map((p: any) => ({
             id: p.id || `PEND-${Math.floor(100 + Math.random() * 900)}`,
             name: p.name || p.email.split('@')[0],
@@ -367,11 +367,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       })
       .catch((e) => console.warn('[Admin] Pending users sync notice:', e));
 
-    // 2. Fetch all registered users
-    fetch('/api/all-registered-users')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.users)) {
+    // 2. Fetch all registered users safely
+    safeFetchJson<any>('/api/all-registered-users', { method: 'GET' }, { success: false, users: [] })
+      .then(({ ok, data }) => {
+        if (ok && data?.success && Array.isArray(data.users)) {
           const activeServerUsers: AdminUserRecord[] = data.users
             .filter((u: any) => u.status === 'Active')
             .map((u: any) => ({
@@ -627,15 +626,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
     }
 
-    // Call server endpoint to permanently save approval in registered_users.json and Firestore!
-    fetch('/api/approve-user', {
+    // Call server endpoint safely to permanently save approval
+    safeFetchJson<any>('/api/approve-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: user.email, id: user.id }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
+    }, { success: true })
+      .then(({ data }) => {
+        if (data?.success) {
           console.log('[Admin] User approval saved on server:', data.message);
         }
       })
@@ -646,14 +644,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   const handleRejectPendingUser = (id: string, email: string) => {
     setPendingActivations((prev) => prev.filter((u) => u.id !== id && u.email.toLowerCase() !== email.toLowerCase()));
-    fetch('/api/reject-user', {
+    safeFetchJson<any>('/api/reject-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, id }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
+    }, { success: true })
+      .then(({ data }) => {
+        if (data?.success) {
           console.log('[Admin] User rejection saved on server:', data.message);
         }
       })
@@ -872,8 +869,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
     window.dispatchEvent(new Event('storage'));
 
-    // Save permanently on server database so any browser can log in immediately
-    fetch('/api/admin/create-user', {
+    // Save permanently on server database safely so any browser can log in immediately
+    safeFetchJson('/api/admin/create-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -885,10 +882,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         status: 'Active',
         location: newUser.location,
       }),
-    }).catch((err) => console.error('[API] Admin create-user error:', err));
+    }, { success: true }).catch((err) => console.error('[API] Admin create-user error:', err));
 
-    // Automatically send welcome email with credentials via Brevo SMTP relay
-    fetch('/api/send-welcome-email', {
+    // Automatically send welcome email with credentials via Brevo SMTP relay safely
+    safeFetchJson('/api/send-welcome-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -897,10 +894,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         role: newUser.role,
         password: newUser.pass,
       }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
+    }, { success: true })
+      .then(({ data }) => {
+        if (data?.success) {
           console.log('[SMTP] Welcome email sent successfully to', newUser.email);
         }
       })
@@ -1040,15 +1036,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     localStorage.setItem('codeflow_broadcasts', JSON.stringify(updatedList));
     window.dispatchEvent(new Event('codeflow_broadcasts_updated'));
 
-    // Call server API to permanently persist notice on server & Firestore and broadcast real-time
-    fetch('/api/broadcasts', {
+    // Call server API safely to permanently persist notice on server & Firestore
+    safeFetchJson<any>('/api/broadcasts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notice: newBroadcast }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.broadcasts)) {
+    }, { success: true })
+      .then(({ data }) => {
+        if (data?.success && Array.isArray(data.broadcasts)) {
           setBroadcasts(data.broadcasts);
         }
       })
@@ -1253,9 +1248,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   const fetchSmtpConfig = async () => {
     try {
-      const res = await fetch('/api/smtp-config');
-      if (res.ok) {
-        const data = await res.json();
+      const { ok, data } = await safeFetchJson<any>('/api/smtp-config', { method: 'GET' });
+      if (ok && data) {
         setSmtpServerConfig(data);
         if (data.host) setConfigHost(data.host);
         if (data.port) setConfigPort(String(data.port));
@@ -1278,13 +1272,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     setSmtpTesting(true);
     setSmtpTestResult(null);
     try {
-      const res = await fetch('/api/test-smtp', {
+      const { data } = await safeFetchJson<any>('/api/test-smtp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ testEmail: smtpTestEmail }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      }, { success: false, error: 'Failed to connect to SMTP relay' });
+
+      if (data?.success) {
         setSmtpTestResult({
           success: true,
           message: data.message || 'SMTP connection verified! Test email dispatched.',
@@ -1294,16 +1288,16 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       } else {
         setSmtpTestResult({
           success: false,
-          message: data.error || 'Failed to connect to SMTP relay',
-          isIpUnauthorized: data.isIpUnauthorized,
-          serverIp: data.serverIp,
-          resolution: data.resolution,
-          brevoSecurityUrl: data.brevoSecurityUrl,
+          message: data?.error || 'Failed to connect to SMTP relay',
+          isIpUnauthorized: data?.isIpUnauthorized,
+          serverIp: data?.serverIp,
+          resolution: data?.resolution,
+          brevoSecurityUrl: data?.brevoSecurityUrl,
         });
-        if (data.isIpUnauthorized) {
+        if (data?.isIpUnauthorized) {
           showToast(`Brevo IP Block (525): Authorize server IP ${data.serverIp}`);
         } else {
-          showToast('SMTP Test Failed: ' + (data.error || 'Check credentials'));
+          showToast('SMTP Test Failed: ' + (data?.error || 'Check credentials'));
         }
       }
     } catch (err: any) {
@@ -1320,7 +1314,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     e.preventDefault();
     setIsSavingConfig(true);
     try {
-      const res = await fetch('/api/smtp-config', {
+      const { ok, data } = await safeFetchJson<any>('/api/smtp-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1332,15 +1326,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           from: configFrom,
           provider: configProvider,
         }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      }, { success: false });
+
+      if (ok && data?.success) {
         showToast('SMTP settings updated successfully!');
         setShowConfigModal(false);
         setConfigPass('');
         await fetchSmtpConfig();
       } else {
-        showToast('Failed to update SMTP: ' + (data.error || 'Check configuration'));
+        showToast('Failed to update SMTP: ' + (data?.error || 'Check configuration'));
       }
     } catch (err: any) {
       showToast('Error saving SMTP: ' + err.message);
@@ -1357,7 +1351,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     }
     setSmtpSendingCustom(true);
     try {
-      const res = await fetch('/api/send-email', {
+      const { ok, data } = await safeFetchJson<any>('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1372,15 +1366,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
           `,
         }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      }, { success: false });
+
+      if (ok && data?.success) {
         showToast(`Email dispatched to ${smtpCustomTo}!`);
         setSmtpCustomTo('');
         setSmtpCustomSubject('');
         setSmtpCustomMessage('');
       } else {
-        showToast(`Dispatch failed: ${data.error}`);
+        showToast(`Dispatch failed: ${data?.error || 'Unknown error'}`);
       }
     } catch (err: any) {
       showToast(`Error: ${err.message}`);

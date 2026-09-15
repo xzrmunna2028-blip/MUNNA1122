@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { RegisteredUser } from './ActivationChatBot.js';
 import { getUserDisplayName } from '../utils/userProfileHelper';
+import { safeFetchJson } from '../utils/safeFetch';
 
 const isCreateAccountUrl = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -147,16 +148,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const startApprovalPolling = (email: string) => {
     const checkInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/user-status/${encodeURIComponent(email)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'Active') {
-            clearInterval(checkInterval);
-            setSuccessMessage('🎉 আপনার অ্যাকাউন্টটি অ্যাডমিন অনুমোদন করেছেন! ড্যাশবোর্ডে প্রবেশ করানো হচ্ছে...');
-            setTimeout(() => {
-              completeLogin(email, data.user?.name);
-            }, 1000);
-          }
+        const { ok, data } = await safeFetchJson<any>(`/api/user-status?email=${encodeURIComponent(email)}`, { method: 'GET' });
+        if (ok && data?.status === 'Active') {
+          clearInterval(checkInterval);
+          setSuccessMessage('🎉 আপনার অ্যাকাউন্টটি অ্যাডমিন অনুমোদন করেছেন! ড্যাশবোর্ডে প্রবেশ করানো হচ্ছে...');
+          setTimeout(() => {
+            completeLogin(email, data.user?.name);
+          }, 1000);
         }
       } catch (e) {}
     }, 2500);
@@ -185,21 +183,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     try {
-      // 1. Try Universal Server Authentication across Any Browser
-      const res = await fetch('/api/login', {
+      // 1. Try Universal Server Authentication across Any Browser safely
+      const { ok, data } = await safeFetchJson<any>('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inputUser, password: inputPass }),
-      });
+      }, { success: false });
 
-      const data = await res.json();
-
-      if (res.ok && data.success && data.user) {
+      if (ok && data?.success && data?.user) {
         completeLogin(data.user.email, data.user.name);
         return;
       }
 
-      if (data.status === 'Pending') {
+      if (data?.status === 'Pending') {
         setIsLoading(false);
         setErrorMessage(
           '⚠️ আপনার অ্যাকাউন্টটি এখনো অ্যাডমিন অনুমোদনের অপেক্ষায় রয়েছে (Pending Approval)। অ্যাডমিন অনুমোদন দিলে আপনি সাথে সাথে যেকোনো ব্রাউজার থেকে প্রবেশ করতে পারবেন।'
@@ -208,19 +204,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      if (data.status === 'Suspended') {
+      if (data?.status === 'Suspended') {
         setIsLoading(false);
         setErrorMessage('আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে (Suspended)।');
         return;
       }
 
-      if (data.status === 'Rejected') {
+      if (data?.status === 'Rejected') {
         setIsLoading(false);
         setErrorMessage('আপনার অ্যাকাউন্ট নিবন্ধনটি বাতিল করা হয়েছে।');
         return;
       }
 
-      if (data.error && !res.ok) {
+      if (data?.error && !ok) {
         setIsLoading(false);
         setErrorMessage(data.error);
         return;
@@ -322,16 +318,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    // Call server registration
+    // Call server registration safely
     try {
-      const res = await fetch('/api/register', {
+      const { ok, data } = await safeFetchJson<any>('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password: pass }),
-      });
+      }, { success: false });
 
-      const data = await res.json();
-      if (!res.ok && data.error) {
+      if (!ok && data?.error) {
         setIsLoading(false);
         setErrorMessage(data.error);
         return;

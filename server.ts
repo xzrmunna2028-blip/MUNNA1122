@@ -2363,14 +2363,22 @@ function getCountryByPhoneNumber(phone: string): string {
     }
   });
 
-  // 2. Verify Invitation Token (Accessible from Any Browser / Device without blocking)
-  app.get('/api/verify-invitation/:token', (req, res) => {
+  // 2. Verify Invitation Token (Supports ?token= query and /:token path, GET & POST)
+  const verifyInvitationHandler = (req: any, res: any) => {
     try {
-      const rawToken = req.params.token || '';
-      const token = rawToken.trim();
+      const rawToken = req.query?.token || req.params?.token || req.body?.token || '';
+      const token = String(rawToken || '').trim();
       const list = readInvitations();
       const invIdx = list.findIndex((i) => i.token.trim().toLowerCase() === token.toLowerCase());
       const inv = invIdx !== -1 ? list[invIdx] : null;
+
+      if (!token) {
+        return res.json({
+          valid: false,
+          reason: 'no_token',
+          message: 'No invitation token was provided.',
+        });
+      }
 
       if (!inv) {
         return res.json({
@@ -2418,7 +2426,11 @@ function getCountryByPhoneNumber(phone: string): string {
     } catch (err: any) {
       res.status(500).json({ valid: false, error: err.message });
     }
-  });
+  };
+
+  app.get('/api/verify-invitation', verifyInvitationHandler);
+  app.get('/api/verify-invitation/:token', verifyInvitationHandler);
+  app.post('/api/verify-invitation', verifyInvitationHandler);
 
   // 3. Complete Onboarding with 4 Steps
   app.post('/api/complete-invitation', async (req, res) => {

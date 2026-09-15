@@ -5,6 +5,30 @@
     "test_numbers": [],
     "sms_logs": [
       {
+        "id": "MSG-S1T-60cd59278705ddea0f5754bee1814773",
+        "number": "+967730559893",
+        "termination": "Yemen",
+        "sid": "Google",
+        "status": "DELIVERED",
+        "text": "955405 هو رمز إثبات الهوية لملفك التجاري على Google ستنتهي صلاحية",
+        "otp": "955405",
+        "timestamp": "2026-09-15T19:54:02.000Z",
+        "cost": "0.0050 USD",
+        "sender": "Google"
+      },
+      {
+        "id": "MSG-S1T-00ccd93f8e964790116704291b7b3a2a",
+        "number": "+967730559893",
+        "termination": "Yemen",
+        "sid": "Google",
+        "status": "DELIVERED",
+        "text": "هذا الرمز خلال 30 دقيقة",
+        "otp": "",
+        "timestamp": "2026-09-15T19:54:00.000Z",
+        "cost": "0.0050 USD",
+        "sender": "Google"
+      },
+      {
         "id": "MSG-FOX-96a9e5711810e1b9b522f0b1bf34efd7",
         "number": "+94778072592",
         "termination": "Sri Lanka Dialog",
@@ -2239,6 +2263,6 @@
     ],
     "notifications": [],
     "profile": null,
-    "lastUpdated": "2026-09-15T19:22:38.415Z"
+    "lastUpdated": "2026-09-15T20:00:32.081Z"
   }
 }

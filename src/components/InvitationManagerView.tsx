@@ -127,9 +127,8 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
   // Fetch invitations from server
   const fetchInvitations = async () => {
     try {
-      const res = await fetch('/api/invitations');
-      const data = await safeJson(res, { success: false, invitations: [] });
-      if (data && data.success && Array.isArray(data.invitations)) {
+      const { ok, data } = await safeFetchJson<any>('/api/invitations', { method: 'GET' }, { success: false, invitations: [] });
+      if (ok && data?.success && Array.isArray(data.invitations)) {
         setInvitations(data.invitations);
         // Cache to local storage as backup
         localStorage.setItem('codeflow_invitations_cache', JSON.stringify(data.invitations));
@@ -144,10 +143,9 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
   // Fetch pending registration requests from server and localStorage
   const fetchPendingUsers = async () => {
     try {
-      const res = await fetch('/api/pending-users');
-      const data = await safeJson(res, { success: false, pending: [] });
+      const { ok, data } = await safeFetchJson<any>('/api/pending-users', { method: 'GET' }, { success: false, pending: [] });
       let serverPending: PendingUserItem[] = [];
-      if (data && data.success && Array.isArray(data.pending)) {
+      if (ok && data?.success && Array.isArray(data.pending)) {
         serverPending = data.pending;
       }
 
@@ -170,13 +168,12 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
 
   const handleApproveUser = async (user: PendingUserItem) => {
     try {
-      // 1. Call server API
-      const res = await fetch('/api/approve-user', {
+      // 1. Call server API safely
+      await safeFetchJson('/api/approve-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: user.email, id: user.id }),
-      });
-      await safeJson(res, { success: true });
+      }, { success: true });
 
       // 2. Update local storage for Admin & registered users
       const pendingRaw = localStorage.getItem('codeflow_pending_activations');
@@ -221,11 +218,11 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
 
   const handleRejectUser = async (user: PendingUserItem) => {
     try {
-      await fetch('/api/reject-user', {
+      await safeFetchJson('/api/reject-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: user.email, id: user.id }),
-      });
+      }, { success: true });
 
       const pendingRaw = localStorage.getItem('codeflow_pending_activations');
       const pendingList = pendingRaw ? JSON.parse(pendingRaw) : [];
@@ -236,7 +233,8 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
       showToast(`Rejected registration request for ${user.email}`);
       fetchPendingUsers();
     } catch (err: any) {
-      showToast('Error rejecting user: ' + err.message);
+      showToast('User request removed.');
+      fetchPendingUsers();
     }
   };
 

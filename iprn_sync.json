@@ -1,19 +1,19 @@
 {
-  "last_updated": "2026-09-15T16:06:22.283Z",
+  "last_updated": "2026-09-15T20:07:14.005Z",
   "metrics": {
-    "messages": 177,
-    "delivered": 177,
+    "messages": 188,
+    "delivered": 188,
     "failed": 0,
-    "todayCount": 177,
+    "todayCount": 188,
     "deliveryRate": 100,
     "todayDate": "9/15/2026",
     "totalRanges": 0
   },
   "realtime_counters": {
-    "totalMessages": 177,
-    "delivered": 177,
+    "totalMessages": 188,
+    "delivered": 188,
     "failed": 0,
-    "charged": 177,
+    "charged": 188,
     "totalRanges": 0
   },
   "chart_data": [
@@ -55,12 +55,156 @@
     },
     {
       "date": "Sep 15",
-      "total": 177,
-      "delivered": 173,
+      "total": 186,
+      "delivered": 182,
       "failed": 4
     }
   ],
   "active_sms_logs": [
+    {
+      "id": "MSG-S1T-60cd59278705ddea0f5754bee1814773",
+      "number": "+967730559893",
+      "termination": "Yemen",
+      "sid": "Google",
+      "status": "DELIVERED",
+      "text": "955405 هو رمز إثبات الهوية لملفك التجاري على Google ستنتهي صلاحية",
+      "otp": "955405",
+      "timestamp": "2026-09-15T19:54:02.000Z",
+      "cost": "0.0050 USD",
+      "sender": "Google"
+    },
+    {
+      "id": "MSG-S1T-00ccd93f8e964790116704291b7b3a2a",
+      "number": "+967730559893",
+      "termination": "Yemen",
+      "sid": "Google",
+      "status": "DELIVERED",
+      "text": "هذا الرمز خلال 30 دقيقة",
+      "otp": "",
+      "timestamp": "2026-09-15T19:54:00.000Z",
+      "cost": "0.0050 USD",
+      "sender": "Google"
+    },
+    {
+      "id": "MSG-FOX-96a9e5711810e1b9b522f0b1bf34efd7",
+      "number": "+94778072592",
+      "termination": "Sri Lanka Dialog",
+      "sid": "iglooworks",
+      "status": "DELIVERED",
+      "text": "Bna pwo whlm evpxpf.  c s\u001b/P919 \u001b/ p\u001b/ . \u001b/1,n1 72 ra 0To7  o S03 \u001b/9 e.8rf h4o.\u001b/ 1r6t On51  :t ef i4nm 47 A   uv.",
+      "otp": "",
+      "timestamp": "2026-09-15T19:06:22.000Z",
+      "cost": "0.0100 USD",
+      "sender": "iglooworks"
+    },
+    {
+      "id": "MSG-S1T-f435c557559ed5a6ac5ef50074497592",
+      "number": "+967737214547",
+      "termination": "Yemen",
+      "sid": "AsthoriaV",
+      "status": "DELIVERED",
+      "text": "Your AsthoriaVerse verification code is 057600 Dont share this code with anyone; our employees will never ask for the code",
+      "otp": "057600",
+      "timestamp": "2026-09-15T18:52:58.000Z",
+      "cost": "0.0050 USD",
+      "sender": "AsthoriaV"
+    },
+    {
+      "id": "MSG-S1T-05dc7881a0a0a22de7eae1793ac03c29",
+      "number": "+967738240148",
+      "termination": "Yemen",
+      "sid": "Saya",
+      "status": "DELIVERED",
+      "text": "#رمز Saya الخاص بك 358860 y2DOMVjgNx",
+      "otp": "358860",
+      "timestamp": "2026-09-15T18:40:23.000Z",
+      "cost": "0.0050 USD",
+      "sender": "Saya"
+    },
+    {
+      "id": "MSG-S1T-2b10ab6acf1916399e5911e614e351b1",
+      "number": "+251943710831",
+      "termination": "Ethiopia",
+      "sid": "TikTok",
+      "status": "DELIVERED",
+      "text": "[#][TikTok] 0979 is your verification coden3ggNv9RHae",
+      "otp": "0979",
+      "timestamp": "2026-09-15T18:15:15.000Z",
+      "cost": "0.0050 USD",
+      "sender": "TikTok"
+    },
+    {
+      "id": "MSG-FOX-034768509c26289146787e197a4bf9cd",
+      "number": "+2290155196819",
+      "termination": "Benin MTN",
+      "sid": "FACEBOOK",
+      "status": "DELIVERED",
+      "text": "<#> 47991 est votre code Facebook\nH29Q+Fsn4Sr",
+      "otp": "47991",
+      "timestamp": "2026-09-15T18:02:06.000Z",
+      "cost": "0.0100 USD",
+      "sender": "FACEBOOK"
+    },
+    {
+      "id": "MSG-S1T-e695c00d3956e2a12148a582f2a35569",
+      "number": "+251968606536",
+      "termination": "Ethiopia",
+      "sid": "BOTIM",
+      "status": "DELIVERED",
+      "text": "Check your code for requirement 430349",
+      "otp": "430349",
+      "timestamp": "2026-09-15T17:42:57.000Z",
+      "cost": "0.0050 USD",
+      "sender": "BOTIM"
+    },
+    {
+      "id": "MSG-S1T-dccde197ce44555f5caa34810722e65b",
+      "number": "+251901183724",
+      "termination": "Ethiopia",
+      "sid": "TikTok",
+      "status": "DELIVERED",
+      "text": "[#][TikTok] 8390 is your verification coden3ggNv9RHae",
+      "otp": "8390",
+      "timestamp": "2026-09-15T17:11:40.000Z",
+      "cost": "0.0050 USD",
+      "sender": "TikTok"
+    },
+    {
+      "id": "MSG-FOX-4d76ebf194270aad76dc299dc06372f6",
+      "number": "+2290155009519",
+      "termination": "Benin MTN",
+      "sid": "FACEBOOK",
+      "status": "DELIVERED",
+      "text": "<#> 30506 est votre code Facebook\nH29Q+Fsn4Sr",
+      "otp": "30506",
+      "timestamp": "2026-09-15T16:36:28.000Z",
+      "cost": "0.0100 USD",
+      "sender": "FACEBOOK"
+    },
+    {
+      "id": "MSG-FOX-e6a212a41d9a862bbc59625b1296d6e6",
+      "number": "+2290155009519",
+      "termination": "Benin MTN",
+      "sid": "FACEBOOK",
+      "status": "DELIVERED",
+      "text": "<#> 655812 est votre code Facebook H29Q+Fsn4Sr",
+      "otp": "655812",
+      "timestamp": "2026-09-15T16:30:01.000Z",
+      "cost": "0.0100 USD",
+      "sender": "FACEBOOK"
+    },
+    {
+      "id": "MSG-S1T-d2ab7e1868dfc1fedb836f69350a5f6d",
+      "number": "+967737319849",
+      "termination": "Yemen",
+      "sid": "ahlanchat",
+      "status": "DELIVERED",
+      "text": "[ahlan]كود التحقق هو 744224 من فضلك قم بادخله في خلال دقيقتين",
+      "otp": "744224",
+      "timestamp": "2026-09-15T16:18:59.000Z",
+      "cost": "0.0050 USD",
+      "sender": "ahlanchat"
+    },
     {
       "id": "MSG-S1T-e67b4a4b112ceac2626c55c2020634fe",
       "number": "+967737319849",
@@ -1716,18 +1860,6 @@
       "timestamp": "2026-09-12T13:30:43.000Z",
       "cost": "0.0100 USD",
       "sender": "WhatsApp"
-    },
-    {
-      "id": "MSG-FOX-e15bf91480c520ed8c979e3f40d8d292",
-      "number": "+2290155009519",
-      "termination": "Benin MTN",
-      "sid": "FACEBOOK",
-      "status": "DELIVERED",
-      "text": "<#> 30506 est votre code Facebook\nH29Q+Fsn4Sr",
-      "otp": "30506",
-      "timestamp": "2026-09-12T12:45:06.000Z",
-      "cost": "0.0100 USD",
-      "sender": "FACEBOOK"
     },
     {
       "id": "MSG-FOX-1ad7acb0519305bd99711e0db5c38512",
