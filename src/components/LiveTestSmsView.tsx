@@ -315,6 +315,7 @@ export const LiveTestSmsView: React.FC = () => {
   const [isLiveActive, setIsLiveActive] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
+  const [selectedPanel, setSelectedPanel] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
   const [alwaysRevealOtps, setAlwaysRevealOtps] = useState(true);
@@ -420,7 +421,7 @@ export const LiveTestSmsView: React.FC = () => {
     } catch (e) {}
   };
 
-  // Audio tone generator for incoming SMS ping (Soft, pleasant standard "Tung" tone)
+  // Audio tone generator for incoming SMS ping (Crisp standard "Tung" notification sound)
   const playSmsSound = () => {
     if (!soundEnabled) return;
     try {
@@ -431,25 +432,32 @@ export const LiveTestSmsView: React.FC = () => {
         ctx.resume();
       }
 
-      // Soft, clean, natural standard notification tone ("Tung")
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      // High quality 2-step bright "Tung" notification chime
+      const now = ctx.currentTime;
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1046.5, now); // C6
+      gain1.gain.setValueAtTime(0.001, now);
+      gain1.gain.linearRampToValueAtTime(0.12, now + 0.01);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.2);
 
-      osc.type = 'sine';
-      // Classic smooth gentle "Tung" ping: 880Hz with soft quick decay to 660Hz
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
-
-      // Gentle, quiet volume that sounds comfortable and pleasant
-      gain.gain.setValueAtTime(0.001, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.25);
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1318.5, now + 0.07); // E6
+      gain2.gain.setValueAtTime(0.001, now + 0.07);
+      gain2.gain.linearRampToValueAtTime(0.15, now + 0.08);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.07);
+      osc2.stop(now + 0.38);
     } catch {
       // Audio fallback
     }
@@ -634,7 +642,8 @@ export const LiveTestSmsView: React.FC = () => {
 
   const handleCopy = (log: SmsLog, logKey: string) => {
     const cleanNum = log.number ? log.number.replace(/^\+/, '') : '';
-    const content = `${cleanNum} | ${log.termination} | ${log.sid}: ${log.text}`;
+    const maskedText = renderMaskedMessageBody(log.text);
+    const content = `${cleanNum} | ${log.termination} | ${log.sid}: ${maskedText}`;
     navigator.clipboard.writeText(content);
     setCopiedId(logKey);
     setTimeout(() => setCopiedId(null), 1800);
@@ -652,191 +661,45 @@ export const LiveTestSmsView: React.FC = () => {
     return Array.from(list).sort();
   }, [liveLogs]);
 
-  // Country Flag Renderer with authentic flag colors matching the panel
+  // Determine if logged in user is Admin
+  const isAdmin = useMemo(() => {
+    if (typeof window === 'undefined') return true;
+    const user = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+    const role = (localStorage.getItem('codeflow_user_role') || '').toLowerCase().trim();
+    return (
+      user === 'xzrmunna7788@gmail.com' ||
+      user === 'xzrmunna7788' ||
+      user === 'xzrmunna974@gmail.com' ||
+      user.includes('admin') ||
+      role === 'admin' ||
+      role === 'master_admin'
+    );
+  }, []);
+
+  // Universal Country Flag Renderer with high-definition CDN images for 100% consistent flags
   const renderFlag = (termination: string, phoneNumber?: string) => {
     const countryInfo = getCountryInfoByPhone(phoneNumber || '', termination);
-    const code = countryInfo.code;
-    
-    // Kazakhstan Flag (Sky blue with yellow sun/ornament)
-    if (code === 'KZ') {
+    const code = (countryInfo.code || 'GL').toUpperCase();
+
+    if (code === 'GL' || !code) {
       return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#00AFCA] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-          <div className="w-3.5 h-3.5 rounded-full border border-[#FFE000] bg-[#FFE000] flex items-center justify-center">
-            <span className="text-[6px] text-amber-900 font-bold">☀️</span>
-          </div>
+        <div className="w-9 h-6 rounded-xs bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 border border-slate-200 dark:border-slate-700 shrink-0 select-none">
+          🌐
         </div>
       );
     }
-    // Morocco Flag (Red background with green star)
-    if (code === 'MA') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#C1272D] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-          <span className="text-xs text-[#006233] font-bold drop-shadow-xs">★</span>
-        </div>
-      );
-    }
-    // Belarus Flag (Red top, Green bottom)
-    if (code === 'BY') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="h-[65%] bg-[#C8313E]" />
-          <div className="h-[35%] bg-[#4AA65A]" />
-        </div>
-      );
-    }
-    // Bolivia Flag (Red, Yellow, Green horizontal stripes)
-    if (code === 'BO') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="h-1/3 bg-[#D52B1E]" />
-          <div className="h-1/3 bg-[#F9E300]" />
-          <div className="h-1/3 bg-[#007934]" />
-        </div>
-      );
-    }
-    // Benin Flag (Green vertical left bar, yellow top right, red bottom right)
-    if (code === 'BJ') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="w-[40%] bg-[#008751]" />
-          <div className="w-[60%] flex flex-col h-full">
-            <div className="h-1/2 bg-[#FCD116]" />
-            <div className="h-1/2 bg-[#E8112D]" />
-          </div>
-        </div>
-      );
-    }
-    // Cambodia Flag (Blue, Red with temple, Blue)
-    if (code === 'KH') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 relative">
-          <div className="h-[25%] bg-[#032EA6]" />
-          <div className="h-[50%] bg-[#ED1B24] flex items-center justify-center">
-            <div className="w-3 h-2 bg-white/90 rounded-2xs" />
-          </div>
-          <div className="h-[25%] bg-[#032EA6]" />
-        </div>
-      );
-    }
-    // Ecuador Flag (Yellow top 50%, Blue 25%, Red 25%)
-    if (code === 'EC') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="h-1/2 bg-[#FFD100]" />
-          <div className="h-1/4 bg-[#0033A0]" />
-          <div className="h-1/4 bg-[#DA291C]" />
-        </div>
-      );
-    }
-    // Azerbaijan Flag (Blue, Red, Green horizontal)
-    if (code === 'AZ') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="h-1/3 bg-[#0092BC]" />
-          <div className="h-1/3 bg-[#E4002B]" />
-          <div className="h-1/3 bg-[#009944]" />
-        </div>
-      );
-    }
-    // Algeria Flag (Green left, White right with crescent)
-    if (code === 'DZ') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="w-1/2 bg-[#006233]" />
-          <div className="w-1/2 bg-white flex items-center justify-start pl-0.5">
-            <span className="text-[9px] text-red-600 font-bold leading-none">🌙</span>
-          </div>
-        </div>
-      );
-    }
-    // United Kingdom (GB / UK)
-    if (code === 'GB') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#012169] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-          <div className="absolute w-full h-[3px] bg-red-600" />
-          <div className="absolute h-full w-[3px] bg-red-600" />
-        </div>
-      );
-    }
-    // Sri Lanka Flag (Yellow border with green/orange stripes and maroon lion)
-    if (code === 'LK') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 bg-[#FFBE29] p-0.5">
-          <div className="w-[12%] bg-[#005F4B] h-full mr-[3%]" />
-          <div className="w-[12%] bg-[#E67E22] h-full mr-[3%]" />
-          <div className="flex-1 bg-[#800000] h-full flex items-center justify-center">
-            <span className="text-[8px] leading-none">🦁</span>
-          </div>
-        </div>
-      );
-    }
-    // Mozambique Flag
-    if (code === 'MZ') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-          <div className="h-[30%] bg-[#009739] w-full" />
-          <div className="h-[5%] bg-white w-full" />
-          <div className="h-[30%] bg-[#000000] w-full" />
-          <div className="h-[5%] bg-white w-full" />
-          <div className="h-[30%] bg-[#FED141] w-full" />
-          <div 
-            className="absolute top-0 left-0 h-full bg-[#D11226]" 
-            style={{ 
-              width: '38%', 
-              clipPath: 'polygon(0 0, 100% 50%, 0 100%)' 
-            }} 
-          />
-        </div>
-      );
-    }
-    // Bangladesh Flag (Green with Red circle)
-    if (code === 'BD') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#006A4E] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-          <div className="w-4 h-4 rounded-full bg-[#F42A41]" />
-        </div>
-      );
-    }
-    // India Flag (Saffron, White, Green)
-    if (code === 'IN') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="h-1/3 bg-[#FF9933]" />
-          <div className="h-1/3 bg-white flex items-center justify-center">
-            <div className="w-1.5 h-1.5 rounded-full border border-[#000080]" />
-          </div>
-          <div className="h-1/3 bg-[#138808]" />
-        </div>
-      );
-    }
-    // France Flag (Blue, White, Red)
-    if (code === 'FR') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
-          <div className="w-1/3 bg-[#002395]" />
-          <div className="w-1/3 bg-white" />
-          <div className="w-1/3 bg-[#ED2939]" />
-        </div>
-      );
-    }
-    // United States / USA Flag
-    if (code === 'US') {
-      return (
-        <div className="w-10 h-7 rounded-xs overflow-hidden bg-red-600 relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-          <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-[#3C3B6E] flex items-center justify-center text-[5px] text-white">★</div>
-          <div className="h-[14%] bg-white w-full" />
-          <div className="h-[14%] bg-red-600 w-full" />
-          <div className="h-[14%] bg-white w-full" />
-          <div className="h-[14%] bg-red-600 w-full" />
-          <div className="h-[14%] bg-white w-full" />
-          <div className="h-[14%] bg-red-600 w-full" />
-        </div>
-      );
-    }
-    // Default Flag (renders authentic emoji flag)
+
     return (
-      <div className="w-10 h-7 rounded-xs bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-700/50 select-none">
-        {countryInfo.emoji}
+      <div className="w-9 h-6 rounded-xs overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xs shrink-0 relative flex items-center justify-center select-none">
+        <img
+          src={`https://flagcdn.com/w80/${code.toLowerCase()}.png`}
+          alt={countryInfo.name}
+          className="w-full h-full object-cover rounded-xs"
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = 'none';
+          }}
+        />
+        <span className="absolute text-xs leading-none pointer-events-none -z-10">{countryInfo.emoji || '🌐'}</span>
       </div>
     );
   };
@@ -1107,10 +970,11 @@ export const LiveTestSmsView: React.FC = () => {
   // Helper to mask OTP code in message body text (matches Switchfy / KSI IPRN live test design)
   const renderMaskedMessageBody = (text: string, _isRevealed?: boolean) => {
     if (!text) return '';
-    // Unconditionally mask standalone 4 to 8 digit numbers or G-XXXXXX formats with exactly 'xxxxx'
+    // Unconditionally mask standalone 4 to 8 digit numbers or G-XXXXXX formats with exactly 'XXXX'
     return text
-      .replace(/\b[0-9]{4,8}\b/g, 'xxxxx')
-      .replace(/G-[0-9]{4,8}/gi, 'G-xxxxx');
+      .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+      .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+      .replace(/G-[0-9]{4,8}/gi, 'G-XXXX');
   };
   // Deduplicate incoming logs so the same OTP on the same number never displays repeatedly
   const uniqueLiveLogs = useMemo(() => {
@@ -1146,9 +1010,15 @@ export const LiveTestSmsView: React.FC = () => {
 
       const countryMatch = selectedCountry === 'All' || 
         countryInfo.name.toLowerCase() === selectedCountry.toLowerCase();
-      return termMatch && countryMatch;
+
+      const panelMatch = selectedPanel === 'All' ||
+        (selectedPanel === 'Fox SMS' && log.id?.startsWith('MSG-FOX-')) ||
+        (selectedPanel === 'Blue SMS' && log.id?.startsWith('MSG-BLUE-')) ||
+        (selectedPanel === 'S1T SMS' && log.id?.startsWith('MSG-S1T-'));
+
+      return termMatch && countryMatch && panelMatch;
     });
-  }, [liveLogs, searchTerm, selectedCountry]);
+  }, [liveLogs, searchTerm, selectedCountry, selectedPanel]);
 
   const totalPages = Math.ceil(filteredLogs.length / perPage) || 1;
   const paginatedLogs = useMemo(() => {
@@ -1319,18 +1189,37 @@ export const LiveTestSmsView: React.FC = () => {
           />
         </div>
 
-        {/* Country filter */}
-        <div>
-          <select
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-          >
-            <option value="All">All Countries</option>
-            {availableCountries.map(country => (
-              <option key={country} value={country}>{country}</option>
-            ))}
-          </select>
+        {/* Filter selectors grid */}
+        <div className={`grid ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+          {/* Country filter */}
+          <div>
+            <select
+              value={selectedCountry}
+              onChange={(e) => setSelectedCountry(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+            >
+              <option value="All">All Countries</option>
+              {availableCountries.map(country => (
+                <option key={country} value={country}>{country}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Panel Source filter - Admin only */}
+          {isAdmin && (
+            <div>
+              <select
+                value={selectedPanel}
+                onChange={(e) => setSelectedPanel(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+              >
+                <option value="All">All Panels</option>
+                <option value="Fox SMS">Fox SMS</option>
+                <option value="Blue SMS">Blue SMS</option>
+                <option value="S1T SMS">S1T SMS</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Pagination & Count Row */}
@@ -1398,10 +1287,16 @@ export const LiveTestSmsView: React.FC = () => {
                 rangeDisplay = log.termination.replace(new RegExp('^' + countryInfo.name + '\\s*', 'i'), '').trim();
               }
 
+              const isFirstMessage = idx === 0 && currentPage === 1;
+
               return (
                 <div 
                   key={logKey}
-                  className="p-4 transition space-y-3 bg-white hover:bg-slate-50/60 dark:bg-slate-900 dark:hover:bg-slate-800/40"
+                  className={`p-4 transition space-y-3 relative ${
+                    isFirstMessage 
+                      ? 'bg-[#f4fce3] dark:bg-[#1c3308]/70 border-l-4 border-l-[#84cc16] shadow-2xs' 
+                      : 'bg-white hover:bg-slate-50/60 dark:bg-slate-900 dark:hover:bg-slate-800/40'
+                  }`}
                 >
                   <div className="flex items-start gap-3">
                     {/* Country Flag */}
@@ -1434,11 +1329,28 @@ export const LiveTestSmsView: React.FC = () => {
                       </div>
 
                       {/* Line 3: Social Media / App Brand Logo + Sender badge */}
-                      <div className="flex items-center gap-2 pt-0.5">
-                        {renderBrandLogo(log.sid)}
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                          {formatBrandName(log.sid)}
-                        </span>
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        <div className="flex items-center gap-2">
+                          {renderBrandLogo(log.sid)}
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                            {formatBrandName(log.sid)}
+                          </span>
+                        </div>
+                        {isAdmin && log.id?.startsWith('MSG-FOX-') && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400 uppercase tracking-wider select-none shrink-0 scale-95 border border-amber-500/10">
+                            Fox SMS
+                          </span>
+                        )}
+                        {isAdmin && log.id?.startsWith('MSG-BLUE-') && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400 uppercase tracking-wider select-none shrink-0 scale-95 border border-sky-500/10">
+                            Blue SMS
+                          </span>
+                        )}
+                        {isAdmin && log.id?.startsWith('MSG-S1T-') && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 uppercase tracking-wider select-none shrink-0 scale-95 border border-emerald-500/10">
+                            S1T SMS
+                          </span>
+                        )}
                       </div>
 
                       {/* Line 4: Message Body with masked OTP text (matching Switchfy / KSI panel) */}
@@ -1446,21 +1358,6 @@ export const LiveTestSmsView: React.FC = () => {
                         {renderMaskedMessageBody(log.text, isRevealed)}
                       </p>
                     </div>
-                  </div>
-
-                  {/* Bottom Row with + Button */}
-                  <div className="flex justify-end pt-1">
-                    <button
-                      onClick={() => handleCopy(log, logKey)}
-                      className="w-7 h-7 rounded-md bg-[#ecfccb] hover:bg-[#d9f99d] text-[#65a30d] dark:bg-lime-950/60 dark:hover:bg-lime-900/60 dark:text-lime-400 flex items-center justify-center transition cursor-pointer shadow-2xs"
-                      title="Copy message & number"
-                    >
-                      {copiedId === logKey ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <Plus className="w-4 h-4 stroke-[2.5]" />
-                      )}
-                    </button>
                   </div>
                 </div>
               );

@@ -16,6 +16,14 @@ import {
   ArrowUpDown
 } from 'lucide-react';
 
+const maskSmsText = (text: string | undefined | null): string => {
+  if (!text) return '';
+  return text
+    .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+    .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+    .replace(/\b[Gg]-[0-9]{4,8}\b/gi, 'G-XXXX');
+};
+
 interface SmsRecordItem {
   timestampDate: string; // e.g. "2026-09-06"
   timestampTime: string; // e.g. "21:55:35 UTC"
@@ -657,8 +665,8 @@ export const SmsRecordsView: React.FC = () => {
 
                     {/* Message detail column */}
                     <td className="p-4 align-middle">
-                      <div className="text-slate-500 dark:text-slate-400 font-medium text-xs max-w-sm line-clamp-2 leading-relaxed break-words" title={rec.message}>
-                        {rec.message}
+                      <div className="text-slate-500 dark:text-slate-400 font-medium text-xs max-w-sm line-clamp-2 leading-relaxed break-words" title={maskSmsText(rec.message)}>
+                        {maskSmsText(rec.message)}
                       </div>
                     </td>
 

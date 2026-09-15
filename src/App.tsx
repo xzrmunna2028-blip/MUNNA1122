@@ -43,6 +43,11 @@ import {
   getRealSmsLogs,
 } from './utils/realtimeSmsService';
 
+import {
+  syncUserWorkspaceFromServer,
+  pushUserWorkspaceToServer,
+} from './utils/userWorkspaceSync';
+
 import { clientDb, doc, collection, onSnapshot } from './lib/firebaseClient';
 
 import {
@@ -56,14 +61,102 @@ import {
   sampleChart90Days,
 } from './data/mockData';
 
+const TAB_TO_HASH_MAP: Record<string, string> = {
+  dashboard: 'dashboard',
+  profile: 'agent',
+  live_test_sms: 'live-test',
+  activesms: 'active-sms',
+  mynumbers: 'my-numbers',
+  test_numbers: 'test-numbers',
+  statistics: 'statistics',
+  sms_records: 'sms-records',
+  sid_notifications: 'sid-notifications',
+  my_invoices: 'my-invoices',
+  security: 'security',
+  payment_methods: 'payment-methods',
+  admin_panel: 'admin',
+  login: 'login',
+  onboarding: 'onboarding',
+};
+
+const HASH_TO_TAB_MAP: Record<string, string> = {
+  dashboard: 'dashboard',
+  agent: 'profile',
+  'agent-account': 'profile',
+  profile: 'profile',
+  'live-test': 'live_test_sms',
+  live_test_sms: 'live_test_sms',
+  'active-sms': 'activesms',
+  activesms: 'activesms',
+  'my-numbers': 'mynumbers',
+  mynumbers: 'mynumbers',
+  'test-numbers': 'test_numbers',
+  test_numbers: 'test_numbers',
+  statistics: 'statistics',
+  'sms-records': 'sms_records',
+  sms_records: 'sms_records',
+  'sid-notifications': 'sid_notifications',
+  sid_notifications: 'sid_notifications',
+  'my-invoices': 'my_invoices',
+  my_invoices: 'my_invoices',
+  security: 'security',
+  'payment-methods': 'payment_methods',
+  payment_methods: 'payment_methods',
+  admin: 'admin_panel',
+  admin_panel: 'admin_panel',
+  login: 'login',
+  onboarding: 'onboarding',
+};
+
+const getTabFromHash = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const rawHash = window.location.hash || '';
+  const clean = rawHash.replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
+  if (!clean) return null;
+  return HASH_TO_TAB_MAP[clean] || null;
+};
+
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>(() => {
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    const fromHash = getTabFromHash();
+    if (fromHash) return fromHash;
     return localStorage.getItem('codeflow_active_tab') || 'dashboard';
   });
   
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    localStorage.setItem('codeflow_active_tab', tab);
+    if (typeof window !== 'undefined') {
+      const slug = TAB_TO_HASH_MAP[tab] || tab;
+      const currentHash = (window.location.hash || '').replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
+      const currentToken = getOnboardingTokenFromUrl();
+      if (currentHash !== slug && !currentToken) {
+        window.history.replaceState(null, '', `/#/${slug}`);
+      }
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem('codeflow_active_tab', activeTab);
+    const handleHashChange = () => {
+      const fromHash = getTabFromHash();
+      if (fromHash && fromHash !== activeTab) {
+        setActiveTabState(fromHash);
+        localStorage.setItem('codeflow_active_tab', fromHash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const currentToken = getOnboardingTokenFromUrl();
+    if (currentToken) return;
+    const slug = TAB_TO_HASH_MAP[activeTab] || activeTab;
+    const currentHash = (window.location.hash || '').replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
+    if (currentHash !== slug) {
+      window.history.replaceState(null, '', `/#/${slug}`);
+    }
   }, [activeTab]);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('codeflow_theme');
@@ -225,6 +318,48 @@ export default function App() {
         socket.onmessage = (event) => {
           try {
             const payload = JSON.parse(event.data);
+
+            // Handle real-time broadcast notices
+            if (payload && (payload.type === 'broadcasts_updated' || payload.broadcasts)) {
+              const bList = payload.broadcasts;
+              if (Array.isArray(bList)) {
+                setBroadcasts(bList);
+                localStorage.setItem('codeflow_broadcasts', JSON.stringify(bList));
+                localStorage.removeItem('codeflow_dismissed_notice_id');
+                setDismissedNoticeId(null);
+              }
+            }
+
+            // Handle real-time user status changes
+            if (payload && (payload.type === 'users_updated' || payload.type === 'user_pending_registered' || payload.registeredUsers)) {
+              window.dispatchEvent(new CustomEvent('codeflow_users_updated', { detail: payload }));
+            }
+
+            // Handle real-time user workspace synchronization across sessions/devices
+            if (payload && payload.type === 'user_workspace_updated') {
+              const targetEmail = (payload.email || '').toLowerCase().trim();
+              const myEmail = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+              if (targetEmail && targetEmail === myEmail && payload.workspace) {
+                const ws = payload.workspace;
+                if (Array.isArray(ws.rented_numbers)) {
+                  localStorage.setItem('rented_numbers', JSON.stringify(ws.rented_numbers));
+                  window.dispatchEvent(new Event('rented_numbers_updated'));
+                }
+                if (Array.isArray(ws.test_numbers)) {
+                  localStorage.setItem('test_numbers', JSON.stringify(ws.test_numbers));
+                  window.dispatchEvent(new Event('test_numbers_updated'));
+                }
+                if (Array.isArray(ws.sms_logs)) {
+                  localStorage.setItem('real_sms_logs', JSON.stringify(ws.sms_logs));
+                  window.dispatchEvent(new Event('real_sms_updated'));
+                }
+                if (Array.isArray(ws.notifications)) {
+                  localStorage.setItem('codeflow_user_notifications', JSON.stringify(ws.notifications));
+                  window.dispatchEvent(new Event('codeflow_notifications_updated'));
+                }
+              }
+            }
+
             if (payload && (payload.type === 'snapshot' || payload.type === 'update')) {
               const json = payload.data;
               if (json) {
@@ -343,10 +478,50 @@ export default function App() {
     setActiveTab('dashboard');
     localStorage.setItem('codeflow_logged_in', 'true');
     localStorage.setItem('codeflow_user', user);
+    syncUserWorkspaceFromServer(user);
   };
   
-  const currentLoggedUser = (localStorage.getItem('codeflow_user') || 'xzrmunna7788@gmail.com').toLowerCase();
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
   const isAdminUser = currentLoggedUser === 'xzrmunna7788@gmail.com' || currentLoggedUser === 'xzrmunna7788';
+
+  // Real-Time Workspace Synchronization Across Devices & Server Restarts
+  useEffect(() => {
+    if (currentLoggedUser) {
+      syncUserWorkspaceFromServer(currentLoggedUser);
+    }
+
+    let saveTimeout: any = null;
+    const handleDataChanged = () => {
+      if (!currentLoggedUser) return;
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        pushUserWorkspaceToServer(currentLoggedUser);
+      }, 300);
+    };
+
+    window.addEventListener('rented_numbers_updated', handleDataChanged);
+    window.addEventListener('test_numbers_updated', handleDataChanged);
+    window.addEventListener('real_sms_updated', handleDataChanged);
+    window.addEventListener('codeflow_notifications_updated', handleDataChanged);
+    window.addEventListener('codeflow_profile_updated', handleDataChanged);
+
+    return () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      window.removeEventListener('rented_numbers_updated', handleDataChanged);
+      window.removeEventListener('test_numbers_updated', handleDataChanged);
+      window.removeEventListener('real_sms_updated', handleDataChanged);
+      window.removeEventListener('codeflow_notifications_updated', handleDataChanged);
+      window.removeEventListener('codeflow_profile_updated', handleDataChanged);
+    };
+  }, [currentLoggedUser]);
+
+  // Security Lock Guard: Redirect non-admin users away from admin panel
+  useEffect(() => {
+    if (activeTab === 'admin_panel' && !isAdminUser) {
+      console.warn('[Security Shield] Unauthorized access attempt to Admin Panel blocked.');
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isAdminUser]);
 
   // isDemoMode is completely and permanently disabled - pure live IPRN API data
   const isDemoMode = false;
@@ -387,6 +562,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('codeflow_user_notifications', JSON.stringify(notifications));
   }, [notifications]);
+
+  useEffect(() => {
+    // Initial fetch of Broadcast Notices from permanent server endpoint
+    fetch('/api/broadcasts')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.broadcasts)) {
+          setBroadcasts(data.broadcasts);
+          localStorage.setItem('codeflow_broadcasts', JSON.stringify(data.broadcasts));
+        }
+      })
+      .catch((e) => console.warn('[Broadcasts] Initial fetch notice:', e));
+  }, []);
 
   useEffect(() => {
     const handleNotifUpdate = () => {
@@ -624,19 +812,33 @@ export default function App() {
 
   // Auto traffic simulation loop is disabled to ensure 100% real-time data ONLY
 
-  // Check for onboarding token in hash or search query
+  // Check for onboarding token in search, hash or full URL
   const getOnboardingTokenFromUrl = (): string | null => {
+    if (typeof window === 'undefined') return null;
     try {
+      // 1. Direct query parameter: ?token=inv_xxx
       const searchParams = new URLSearchParams(window.location.search);
       const searchToken = searchParams.get('token');
-      if (searchToken) return searchToken;
+      if (searchToken && searchToken.trim()) return searchToken.trim();
 
-      const hash = window.location.hash;
+      // 2. Hash parameters: #onboarding?token=inv_xxx, #/onboarding?token=inv_xxx, #token=inv_xxx
+      const hash = window.location.hash || '';
       if (hash.includes('token=')) {
-        const hashQuery = hash.includes('?') ? hash.split('?')[1] : hash.replace(/^#/, '');
-        const hashParams = new URLSearchParams(hashQuery);
-        return hashParams.get('token');
+        const queryIndex = hash.indexOf('?');
+        if (queryIndex !== -1) {
+          const hashParams = new URLSearchParams(hash.substring(queryIndex + 1));
+          const tok = hashParams.get('token');
+          if (tok && tok.trim()) return tok.trim();
+        }
+        const match = hash.match(/[?&#]token=([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) return match[1].trim();
+        const fallbackMatch = hash.match(/token=([a-zA-Z0-9_-]+)/);
+        if (fallbackMatch && fallbackMatch[1]) return fallbackMatch[1].trim();
       }
+
+      // 3. Fallback regex on full URL
+      const fullMatch = window.location.href.match(/[?&#]token=([a-zA-Z0-9_-]+)/);
+      if (fullMatch && fullMatch[1]) return fullMatch[1].trim();
     } catch (e) {
       console.warn('Error reading token from URL:', e);
     }
@@ -659,7 +861,7 @@ export default function App() {
     };
   }, []);
 
-  // If user arrives via a 10-minute onboarding invitation link, render the 4-Step Onboarding view
+  // If user arrives via a 5-minute onboarding invitation link, render the 4-Step Onboarding view
   if (onboardingToken) {
     return (
       <OnboardingView

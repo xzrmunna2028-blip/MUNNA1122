@@ -18,6 +18,14 @@ import { OtpSessionModal } from './OtpSessionModal';
 import { YourMessagesModal } from './YourMessagesModal';
 import { RealSmsLog } from '../types';
 
+const maskSmsText = (text: string | undefined | null): string => {
+  if (!text) return '';
+  return text
+    .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+    .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+    .replace(/\b[Gg]-[0-9]{4,8}\b/gi, 'G-XXXX');
+};
+
 interface SmsLog {
   timestamp: string;
   status: 'DELIVERED' | 'FAILED' | 'PENDING';
@@ -497,13 +505,13 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
                       <div className="flex items-center gap-2">
                         {otpCode && (
                           <div
-                            onClick={(e) => handleCopyOtp(e, otpCode)}
+                            onClick={(e) => handleCopyOtp(e, 'XXXX')}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono font-black text-xs shadow-xs hover:bg-emerald-500/25 transition cursor-pointer"
                             title="Click to copy OTP"
                           >
                             <span>OTP:</span>
-                            <span className="tracking-wider">{otpCode}</span>
-                            {copiedOtp === otpCode ? (
+                            <span className="tracking-wider">XXXX</span>
+                            {copiedOtp === 'XXXX' ? (
                               <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
                             ) : (
                               <Copy className="w-3 h-3" />
@@ -517,7 +525,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
                     </div>
 
                     <p className="text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 leading-relaxed">
-                      {log.text}
+                      {maskSmsText(log.text)}
                     </p>
                   </div>
                 </div>

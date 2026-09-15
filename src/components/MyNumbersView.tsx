@@ -176,6 +176,14 @@ export const normalizePhoneNumber = (
 
 const DEFAULT_MASTER_TERMINATIONS: TerminationOption[] = [];
 
+const maskSmsText = (text: string | undefined | null): string => {
+  if (!text) return '';
+  return text
+    .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+    .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+    .replace(/\b[Gg]-[0-9]{4,8}\b/gi, 'G-XXXX');
+};
+
 export const MyNumbersView: React.FC = () => {
   const [rentedNumbers, setRentedNumbers] = useState<RentedNumber[]>(() => {
     return ensureDefaultRentedNumbers();
@@ -189,6 +197,27 @@ export const MyNumbersView: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('rented_numbers', JSON.stringify(rentedNumbers));
   }, [rentedNumbers]);
+
+  // Real-time Storage Listener for Admin Updates & OTP Sync
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const saved = localStorage.getItem('rented_numbers');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setRentedNumbers(parsed);
+          }
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('codeflow_numbers_updated', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('codeflow_numbers_updated', handleStorageChange);
+    };
+  }, []);
 
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
@@ -493,6 +522,7 @@ export const MyNumbersView: React.FC = () => {
   const [showAddCustomTermForm, setShowAddCustomTermForm] = useState(false);
   const [adminWizardStep, setAdminWizardStep] = useState<1 | 2 | 3>(1);
   const [customCountry, setCustomCountry] = useState('');
+  const [showCountrySuggestions, setShowCountrySuggestions] = useState(false);
   const [customDialCode, setCustomDialCode] = useState('+880');
   const [customService, setCustomService] = useState('Telegram');
   const [customServiceSearch, setCustomServiceSearch] = useState('');
@@ -972,6 +1002,31 @@ export const MyNumbersView: React.FC = () => {
 
   useEffect(() => {
     fetchTerminations();
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          // If the event has new sync data, trigger real-time refresh of terminations
+          fetchTerminations();
+        } catch (e) {
+          console.error("SSE parsing error in MyNumbersView:", e);
+        }
+      };
+      eventSource.onerror = (err) => {
+        console.warn("SSE connection error in MyNumbersView, reconnecting...", err);
+      };
+    } catch (e) {
+      console.error("Failed to setup SSE in MyNumbersView:", e);
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -1299,12 +1354,7 @@ export const MyNumbersView: React.FC = () => {
                 return (
                   <div
                     key={`${n.id || n.number}-${idx}`}
-                    className="p-5 bg-white dark:bg-slate-900 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors relative animate-fade-in group cursor-pointer"
-                    onClick={() => {
-                      setSessionSelectedNumber(n);
-                      setSessionSelectedLog(latestLog);
-                      setSessionModalOpen(true);
-                    }}
+                    className="p-5 bg-white dark:bg-slate-900 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors relative animate-fade-in group"
                   >
                     <div className="flex items-start gap-4">
                       {/* Checkbox on left */}
@@ -1371,11 +1421,11 @@ export const MyNumbersView: React.FC = () => {
                                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-mono font-black text-sm tracking-widest shadow-2xs">
                                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                      <span>{otpCode}</span>
+                                      <span>XXXX</span>
                                     </div>
                                     <button
                                       type="button"
-                                      onClick={(e) => handleCopyOtp(otpCode, n.id, e)}
+                                      onClick={(e) => handleCopyOtp('XXXX', n.id, e)}
                                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] tracking-wide shadow-xs transition-all active:scale-95 cursor-pointer"
                                       title="Click to copy OTP code"
                                     >
@@ -1394,7 +1444,7 @@ export const MyNumbersView: React.FC = () => {
                                   </div>
                                 ) : (
                                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[160px]">
-                                    {latestLog.text}
+                                    {maskSmsText(latestLog.text)}
                                   </span>
                                 )}
                               </div>
@@ -1608,297 +1658,555 @@ export const MyNumbersView: React.FC = () => {
 
               {/* Modal Body Container */}
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                {/* Dropdown "Select termination" */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                      Select termination
-                    </label>
-                    <span className="text-[10px] font-bold text-lime-600 dark:text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
-                      {terminations.length} Ranges · 86 Countries
-                    </span>
-                  </div>
+                {adminModalTab === 'upload_pool' && isAdmin ? (
+                  // Custom Range / Upload Stock Pool Form (Admin Only)
+                  <div className="space-y-5 animate-fade-in">
+                    {customTermError && (
+                      <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold leading-relaxed flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 animate-pulse"></span>
+                        <p>{customTermError}</p>
+                      </div>
+                    )}
 
-                  {/* Fast Search Filter input */}
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={termSearchQuery}
-                      onChange={(e) => setTermSearchQuery(e.target.value)}
-                      placeholder="Filter country, operator or prefix (e.g. Bangladesh, Vodafone, MTN)..."
-                      className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-white text-xs placeholder:text-slate-400 focus:ring-1 focus:ring-[#65a30d] focus:border-[#65a30d] transition"
-                    />
-                    {termSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setTermSearchQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    {/* Country & Dial Code inputs */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5 relative">
+                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Country Name *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            required
+                            value={customCountry}
+                            onFocus={() => setShowCountrySuggestions(true)}
+                            onBlur={() => {
+                              // Small timeout to allow suggestion click to register
+                              setTimeout(() => setShowCountrySuggestions(false), 200);
+                            }}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomCountry(val);
+                              
+                              // Check if the typed country matches a preset exactly
+                              const matchedPreset = COUNTRY_PRESETS.find(
+                                (p) => p.country.toLowerCase() === val.trim().toLowerCase()
+                              );
+                              let currentDial = customDialCode;
+                              if (matchedPreset) {
+                                setCustomDialCode(matchedPreset.code);
+                                currentDial = matchedPreset.code;
+                              }
+                              processAndInspectNumbers(fileRawText, val, currentDial);
+                            }}
+                            placeholder="e.g. Bangladesh"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none transition"
+                          />
+                          
+                          {/* Autocomplete Suggestions Overlay */}
+                          {showCountrySuggestions && customCountry.trim().length > 0 && (
+                            <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-lg divide-y divide-slate-100 dark:divide-slate-900">
+                              {COUNTRY_PRESETS.filter((p) =>
+                                p.country.toLowerCase().includes(customCountry.toLowerCase())
+                              ).length > 0 ? (
+                                COUNTRY_PRESETS.filter((p) =>
+                                  p.country.toLowerCase().includes(customCountry.toLowerCase())
+                                ).map((preset) => (
+                                  <button
+                                    key={preset.country}
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      // Prevent blur from closing suggestions before state updates
+                                      e.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      setCustomCountry(preset.country);
+                                      setCustomDialCode(preset.code);
+                                      processAndInspectNumbers(fileRawText, preset.country, preset.code);
+                                      setShowCountrySuggestions(false);
+                                    }}
+                                    className="w-full px-4 py-2 text-left text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 flex items-center justify-between transition cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm">{preset.flag}</span>
+                                      <span>{preset.country}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold">
+                                      {preset.code}
+                                    </span>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-4 py-2.5 text-center text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                                  No countries found
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Country Dial Code *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={customDialCode}
+                          onChange={(e) => {
+                            setCustomDialCode(e.target.value);
+                            processAndInspectNumbers(fileRawText, customCountry, e.target.value);
+                          }}
+                          placeholder="e.g. +880"
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none transition"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Service & Rate inputs */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Operator / Service Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={customService}
+                          onChange={(e) => setCustomService(e.target.value)}
+                          placeholder="e.g. Grameenphone, Blue, S1T, Fox"
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none transition"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Rate (per SMS)
+                        </label>
+                        <input
+                          type="text"
+                          value={customRate}
+                          onChange={(e) => setCustomRate(e.target.value)}
+                          placeholder="e.g. 0.0000 USD"
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none transition"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Drag and drop / Click file upload */}
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                        Bulk Upload Numbers File (.xlsx, .xls, .csv, .txt) *
+                      </label>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        accept=".xlsx,.xls,.csv,.tsv,.txt"
+                        className="hidden"
+                      />
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-5 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-500/60 dark:hover:border-indigo-500/50 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl cursor-pointer text-center space-y-1.5 transition-all group"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                        <FileUp className="w-7 h-7 text-indigo-500 mx-auto group-hover:scale-110 transition-transform" />
+                        <span className="text-xs font-black text-slate-700 dark:text-slate-300 block">
+                          {fileName ? `Selected: ${fileName}` : 'Click to Upload Excel, CSV or TXT file'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
+                          Numbers must match country dial prefix (e.g. {customDialCode || '+880'})
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Manual Paste area */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                        Or Paste Phone Numbers
+                      </label>
+                      <textarea
+                        value={fileRawText}
+                        onChange={(e) => processAndInspectNumbers(e.target.value, customCountry, customDialCode)}
+                        placeholder="Paste phone numbers (one per line, with country prefix)..."
+                        rows={4}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none transition resize-none font-mono"
+                      />
+                    </div>
+
+                    {/* Inspection results */}
+                    {(parsedValidNumbers.length > 0 || parsedRejectedNumbers.length > 0) && (
+                      <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950/20 space-y-3">
+                        <div className="flex items-center justify-between text-xs font-bold border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                          <span className="text-slate-500">Inspection Engine Results</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                              {parsedValidNumbers.length} Valid
+                            </span>
+                            <span className="text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">
+                              {parsedRejectedNumbers.length} Rejected
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Valid previews */}
+                        {parsedValidNumbers.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Valid Preview</span>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {parsedValidNumbers.slice(0, 5).map((num, i) => (
+                                <span key={i} className="text-[10px] font-mono font-bold bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
+                                  {num}
+                                </span>
+                              ))}
+                              {parsedValidNumbers.length > 5 && (
+                                <span className="text-[10px] font-extrabold text-slate-400 self-center pl-1">
+                                  +{parsedValidNumbers.length - 5} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Rejected previews */}
+                        {parsedRejectedNumbers.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowRejectedDetails(!showRejectedDetails)}
+                              className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 cursor-pointer focus:outline-none"
+                            >
+                              <span>{showRejectedDetails ? 'Hide' : 'View'} {parsedRejectedNumbers.length} Rejected Numbers</span>
+                            </button>
+                            {showRejectedDetails && (
+                              <div className="max-h-24 overflow-y-auto space-y-1 pt-1 bg-white dark:bg-slate-950 p-2 rounded-lg border border-slate-100 dark:border-slate-800/80 font-mono text-[9px] text-rose-500">
+                                {parsedRejectedNumbers.map((r, idx) => (
+                                  <div key={idx} className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-900 last:border-0">
+                                    <span className="font-bold">{r.raw || '[blank]'}</span>
+                                    <span className="text-slate-400 text-[8px] italic">{r.reason}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-
-                  <div className="relative">
-                    <select
-                      value={selectedTerminationCode}
-                      onChange={(e) => setSelectedTerminationCode(e.target.value)}
-                      className="w-full appearance-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-[#65a30d] focus:border-[#65a30d] transition pr-10 cursor-pointer"
-                    >
-                      <option value="">
-                        {terminations.length === 0 ? '-- No active ranges (Admin has not added any numbers yet) --' : '-- Choose a termination --'}
-                      </option>
-                      {(Object.entries(groupedTerminations) as [string, TerminationOption[]][]).map(([country, items]) => (
-                        <optgroup key={country} label={`${country} (${items.length} ${items.length === 1 ? 'range' : 'ranges'})`}>
-                          {items.map((t) => {
-                            const avail = t.poolStats ? t.poolStats.available : 0;
-                            const isOut = t.poolStats ? t.poolStats.outOfStock : false;
-                            return (
-                              <option key={t.code} value={t.code}>
-                                {t.label} {isOut ? ' [🔴 Out of Stock - 0 Available]' : ` [🟢 ${avail} Available]`}
-                              </option>
-                            );
-                          })}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* Range Live Stock & Usage Status Box */}
-                  {selectedTerm && selectedTerm.poolStats && (
-                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2">
+                ) : (
+                  // Rent Numbers form
+                  <>
+                    {/* Dropdown "Select termination" */}
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Range Pool Stock Health
-                        </span>
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                          selectedTerm.poolStats.outOfStock
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                            : selectedTerm.poolStats.lowStock
-                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                        }`}>
-                          {selectedTerm.poolStats.outOfStock
-                            ? '🔴 Out of Stock (0 Available)'
-                            : selectedTerm.poolStats.lowStock
-                            ? `🟡 Low Stock (${selectedTerm.poolStats.available} Available)`
-                            : `🟢 In Stock (${selectedTerm.poolStats.available} Available)`}
+                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Select termination
+                        </label>
+                        <span className="text-[10px] font-bold text-lime-600 dark:text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
+                          {terminations.length} Ranges · 86 Countries
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
-                        <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
-                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Total Numbers</span>
-                          <span className="text-xs font-black text-slate-800 dark:text-white">{selectedTerm.poolStats.total}</span>
-                        </div>
-                        <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
-                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Used / Rented</span>
-                          <span className="text-xs font-black text-amber-600 dark:text-amber-400">{selectedTerm.poolStats.used}</span>
-                        </div>
-                        <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
-                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Available</span>
-                          <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{selectedTerm.poolStats.available}</span>
-                        </div>
+                      {/* Fast Search Filter input */}
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={termSearchQuery}
+                          onChange={(e) => setTermSearchQuery(e.target.value)}
+                          placeholder="Filter country, operator or prefix (e.g. Bangladesh, Vodafone, MTN)..."
+                          className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-white text-xs placeholder:text-slate-400 focus:ring-1 focus:ring-[#65a30d] focus:border-[#65a30d] transition"
+                        />
+                        {termSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setTermSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  )}
 
-                  <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
-                    {terminations.length === 0
-                      ? 'No active ranges available. Admin has not added any numbers for any country yet.'
-                      : `Showing ${filteredTerminations.length} of ${terminations.length} active range sources added by Admin across ${Object.keys(groupedTerminations).length} countries.`}
-                  </p>
-
-                  {/* Add Custom Range toggler (ADMIN ONLY) */}
-                  {isAdmin && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdminModalTab('upload_pool');
-                          setAdminWizardStep(1);
-                        }}
-                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1.5 focus:outline-none group cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
-                        <span>+ Add / Upload new country numbers range to Stock Pool (Admin)</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Expanded details panel if selectedTerm is active */}
-                {selectedTerm && (
-                  <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800/50 animate-fade-in">
-                    {/* Country & Operator & Available Row Grid */}
-                    <div className="grid grid-cols-3 gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          COUNTRY
-                        </span>
-                        <span className="text-xs font-black text-slate-800 dark:text-white block">
-                          {selectedTerm.country}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          OPERATOR
-                        </span>
-                        <span className="text-xs font-black text-slate-800 dark:text-white block">
-                          {selectedTerm.operator}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          AVAILABLE
-                        </span>
-                        <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
-                          {selectedTerm.available}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Payment Term Pick Select */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Select payment term</span>
-                      </label>
                       <div className="relative">
                         <select
-                          value={paymentTerm}
-                          onChange={(e) => setPaymentTerm(e.target.value)}
-                          className="w-full appearance-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-[#65a30d] focus:border-[#65a30d] pr-10 cursor-pointer"
+                          value={selectedTerminationCode}
+                          onChange={(e) => setSelectedTerminationCode(e.target.value)}
+                          className="w-full appearance-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-[#65a30d] focus:border-[#65a30d] transition pr-10 cursor-pointer"
                         >
-                          <option value="default">1/1 (Default) - Rate: {selectedTerm.rate}</option>
-                          <option value="promo">10/10 (Promo) - Rate: 0.0000 USD</option>
+                          <option value="">
+                            {terminations.length === 0 ? '-- No active ranges (Admin has not added any numbers yet) --' : '-- Choose a termination --'}
+                          </option>
+                          {(Object.entries(groupedTerminations) as [string, TerminationOption[]][]).map(([country, items]) => (
+                            <optgroup key={country} label={`${country} (${items.length} ${items.length === 1 ? 'range' : 'ranges'})`}>
+                              {items.map((t) => {
+                                const avail = t.poolStats ? t.poolStats.available : 0;
+                                const isOut = t.poolStats ? t.poolStats.outOfStock : false;
+                                return (
+                                  <option key={t.code} value={t.code}>
+                                    {t.label} {isOut ? ' [🔴 Out of Stock - 0 Available]' : ` [🟢 ${avail} Available]`}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          ))}
                         </select>
                         <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                        Payment terms determine your rate
+
+                      {/* Range Live Stock & Usage Status Box */}
+                      {selectedTerm && selectedTerm.poolStats && (
+                        <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                              Range Pool Stock Health
+                            </span>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                              selectedTerm.poolStats.outOfStock
+                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                : selectedTerm.poolStats.lowStock
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                            }`}>
+                              {selectedTerm.poolStats.outOfStock
+                                ? '🔴 Out of Stock (0 Available)'
+                                : selectedTerm.poolStats.lowStock
+                                ? `🟡 Low Stock (${selectedTerm.poolStats.available} Available)`
+                                : `🟢 In Stock (${selectedTerm.poolStats.available} Available)`}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                            <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                              <span className="text-[9px] font-bold text-slate-400 block uppercase">Total Numbers</span>
+                              <span className="text-xs font-black text-slate-800 dark:text-white">{selectedTerm.poolStats.total}</span>
+                            </div>
+                            <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                              <span className="text-[9px] font-bold text-slate-400 block uppercase">Used / Rented</span>
+                              <span className="text-xs font-black text-amber-600 dark:text-amber-400">{selectedTerm.poolStats.used}</span>
+                            </div>
+                            <div className="p-1.5 rounded-lg bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                              <span className="text-[9px] font-bold text-slate-400 block uppercase">Available</span>
+                              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{selectedTerm.poolStats.available}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
+                        {terminations.length === 0
+                          ? 'No active ranges available. Admin has not added any numbers for any country yet.'
+                          : `Showing ${filteredTerminations.length} of ${terminations.length} active range sources added by Admin across ${Object.keys(groupedTerminations).length} countries.`}
                       </p>
+
+                      {/* Add Custom Range toggler (ADMIN ONLY) */}
+                      {isAdmin && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminModalTab('upload_pool');
+                              setAdminWizardStep(1);
+                            }}
+                            className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1.5 focus:outline-none group cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                            <span>+ Add / Upload new country numbers range to Stock Pool (Admin)</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Rate & A2P Limit Grid row */}
-                    <div className="grid grid-cols-2 gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          RATE
-                        </span>
-                        <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
-                          {selectedTerm.rate}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                          A2P LIMIT
-                        </span>
-                        <span className="text-xs font-black text-slate-800 dark:text-white block">
-                          {selectedTerm.limit}
-                        </span>
-                      </div>
-                    </div>
+                    {/* Expanded details panel if selectedTerm is active */}
+                    {selectedTerm && (
+                      <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800/50 animate-fade-in">
+                        {/* Country & Operator & Available Row Grid */}
+                        <div className="grid grid-cols-3 gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              COUNTRY
+                            </span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white block">
+                              {selectedTerm.country}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              OPERATOR
+                            </span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white block">
+                              {selectedTerm.operator}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              AVAILABLE
+                            </span>
+                            <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
+                              {selectedTerm.available}
+                            </span>
+                          </div>
+                        </div>
 
-                    {/* Number counts pills & Manual input */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                          How many numbers?
-                        </label>
-                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
-                          Max: 50
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={50}
-                          value={numInputStr}
-                          onChange={(e) => handleCustomCountChange(e.target.value)}
-                          className="w-24 px-4 py-2.5 text-center text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white rounded-xl focus:ring-[#65a30d] focus:border-[#65a30d]"
-                        />
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {[1, 5, 10, 25, 50].map((pill) => (
+                        {/* Payment Term Pick Select */}
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Select payment term</span>
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={paymentTerm}
+                              onChange={(e) => setPaymentTerm(e.target.value)}
+                              className="w-full appearance-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white text-xs font-bold focus:ring-[#65a30d] focus:border-[#65a30d] pr-10 cursor-pointer"
+                            >
+                              <option value="default">1/1 (Default) - Rate: {selectedTerm.rate}</option>
+                              <option value="promo">10/10 (Promo) - Rate: 0.0000 USD</option>
+                            </select>
+                            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            Payment terms determine your rate
+                          </p>
+                        </div>
+
+                        {/* Rate & A2P Limit Grid row */}
+                        <div className="grid grid-cols-2 gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              RATE
+                            </span>
+                            <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
+                              {selectedTerm.rate}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              A2P LIMIT
+                            </span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white block">
+                              {selectedTerm.limit}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Number counts pills & Manual input */}
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                              How many numbers?
+                            </label>
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                              Max: 50
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={numInputStr}
+                              onChange={(e) => handleCustomCountChange(e.target.value)}
+                              className="w-24 px-4 py-2.5 text-center text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-white rounded-xl focus:ring-[#65a30d] focus:border-[#65a30d]"
+                            />
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {[1, 5, 10, 25, 50].map((pill) => (
+                                <button
+                                  key={pill}
+                                  onClick={() => handleSetPillValue(pill)}
+                                  className={`px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                    numCount === pill
+                                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 border-transparent shadow-sm'
+                                      : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800/80 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  {pill}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Number Order toggling */}
+                        <div className="space-y-2.5">
+                          <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                            Number order
+                          </label>
+                          <div className="grid grid-cols-2 gap-3">
+                            {/* Serial */}
                             <button
-                              key={pill}
-                              onClick={() => handleSetPillValue(pill)}
-                              className={`px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                                numCount === pill
-                                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 border-transparent shadow-sm'
-                                  : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800/80 hover:bg-slate-50'
+                              onClick={() => setOrderType('serial')}
+                              className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                orderType === 'serial'
+                                  ? 'bg-white dark:bg-slate-950 border-[#65a30d] text-[#65a30d] ring-2 ring-[#65a30d]/10'
+                                  : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                               }`}
                             >
-                              {pill}
+                              <ArrowUpDown className="w-4 h-4" />
+                              <span>Serial</span>
                             </button>
-                          ))}
+
+                            {/* Random */}
+                            <button
+                              onClick={() => setOrderType('random')}
+                              className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                orderType === 'random'
+                                  ? 'bg-white dark:bg-slate-950 border-[#65a30d] text-[#65a30d] ring-2 ring-[#65a30d]/10'
+                                  : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                              }`}
+                            >
+                              <Shuffle className="w-4 h-4" />
+                              <span>Random</span>
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            You can request up to 50 numbers at a time.
+                          </p>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Number Order toggling */}
-                    <div className="space-y-2.5">
-                      <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        Number order
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Serial */}
-                        <button
-                          onClick={() => setOrderType('serial')}
-                          className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            orderType === 'serial'
-                              ? 'bg-white dark:bg-slate-950 border-[#65a30d] text-[#65a30d] ring-2 ring-[#65a30d]/10'
-                              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                          }`}
-                        >
-                          <ArrowUpDown className="w-4 h-4" />
-                          <span>Serial</span>
-                        </button>
-
-                        {/* Random */}
-                        <button
-                          onClick={() => setOrderType('random')}
-                          className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            orderType === 'random'
-                              ? 'bg-white dark:bg-slate-950 border-[#65a30d] text-[#65a30d] ring-2 ring-[#65a30d]/10'
-                              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Shuffle className="w-4 h-4" />
-                          <span>Random</span>
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                        You can request up to 50 numbers at a time.
-                      </p>
-                    </div>
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
 
               {/* Modal Bottom Sticky Footer Bar */}
               <div className="p-4 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3 shrink-0">
                 <button
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setPoolUploadSuccessData(null);
+                  }}
                   className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold transition cursor-pointer"
                 >
                   Cancel
                 </button>
-                <button
-                  disabled={!selectedTerminationCode}
-                  onClick={handleFormSubmitToConfirmation}
-                  className={`flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                    selectedTerminationCode
-                      ? 'bg-slate-950 hover:bg-slate-900 text-white dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 cursor-pointer'
-                      : 'bg-slate-300 dark:bg-slate-800 text-slate-500 dark:text-slate-600 cursor-not-allowed'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Add numbers</span>
-                </button>
+                {adminModalTab === 'upload_pool' && isAdmin ? (
+                  <button
+                    disabled={isAddingCustomTerm || parsedValidNumbers.length === 0 || !customCountry.trim() || !customDialCode.trim() || !customService.trim()}
+                    onClick={(e) => handleAddCustomTerminationSubmit(e as any)}
+                    className={`flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                      !isAddingCustomTerm && parsedValidNumbers.length > 0 && customCountry.trim() && customDialCode.trim() && customService.trim()
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                        : 'bg-slate-300 dark:bg-slate-800 text-slate-500 dark:text-slate-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>{isAddingCustomTerm ? 'Uploading...' : 'Create & Upload Range'}</span>
+                  </button>
+                ) : (
+                  <button
+                    disabled={!selectedTerminationCode}
+                    onClick={handleFormSubmitToConfirmation}
+                    className={`flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                      selectedTerminationCode
+                        ? 'bg-[#65a30d] hover:bg-lime-700 text-white cursor-pointer'
+                        : 'bg-slate-300 dark:bg-slate-800 text-slate-500 dark:text-slate-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Rent numbers</span>
+                  </button>
+                )}
               </div>
             </div>
           )}

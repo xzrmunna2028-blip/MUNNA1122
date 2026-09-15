@@ -17,7 +17,15 @@ import {
   Hash,
 } from 'lucide-react';
 import { RealSmsLog, RentedNumber } from '../types.js';
-import { getUserSmsLogs } from '../utils/realtimeSmsService.js';
+import { getUserSmsLogs, getRealSmsLogs } from '../utils/realtimeSmsService.js';
+
+const maskSmsText = (text: string | undefined | null): string => {
+  if (!text) return '';
+  return text
+    .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+    .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+    .replace(/\b[Gg]-[0-9]{4,8}\b/gi, 'G-XXXX');
+};
 
 interface OtpSessionModalProps {
   isOpen: boolean;
@@ -56,7 +64,11 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
   // Load logs for the selected number
   const refreshNumberLogs = () => {
-    const allLogs = getUserSmsLogs();
+    const userLogs = getUserSmsLogs();
+    const realLogs = getRealSmsLogs();
+    const allLogs = [...userLogs, ...realLogs].sort((a, b) => {
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
     if (selectedNumber && selectedNumber.number) {
       const cleanTarget = (selectedNumber.number || '').replace(/\s+/g, '');
       const filtered = allLogs.filter((l) => {
@@ -82,11 +94,27 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
     const handleUpdate = () => {
       refreshNumberLogs();
-      // If we are inspecting a log, see if it was updated
-      if (selectedLog) {
-        const allLogs = getUserSmsLogs();
-        const found = allLogs.find((l) => l.id === selectedLog.id);
-        if (found) setSelectedLog(found);
+      const allLogs = [...getUserSmsLogs(), ...getRealSmsLogs()];
+      const targetNum = selectedNumber?.number || selectedLog?.number;
+
+      if (targetNum) {
+        const cleanTarget = targetNum.replace(/\D/g, '');
+        const matchingLogs = allLogs.filter((l) => {
+          const cleanLogNum = String(l.number || '').replace(/\D/g, '');
+          return cleanTarget.includes(cleanLogNum) || cleanLogNum.includes(cleanTarget);
+        }).sort((a, b) => {
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        });
+
+        if (matchingLogs.length > 0) {
+          const latestLog = matchingLogs[0];
+          if (!selectedLog || selectedLog.id !== latestLog.id) {
+            setSelectedLog(latestLog);
+            setSessionLevel(2);
+          } else {
+            setSelectedLog(latestLog);
+          }
+        }
       }
     };
 
@@ -109,24 +137,19 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
         const json = await res.json();
         const logs = json.logs || [];
         const targetNum = selectedNumber?.number || selectedLog?.number;
-        const matchingLog = logs.find((l: any) => {
-          if (!targetNum) return true;
+        if (targetNum) {
           const cleanTarget = targetNum.replace(/\D/g, '');
-          const cleanLogNum = String(l.number || '').replace(/\D/g, '');
-          return cleanTarget.includes(cleanLogNum) || cleanLogNum.includes(cleanTarget);
-        });
+          const matchingLog = logs.find((l: any) => {
+            const cleanLogNum = String(l.number || '').replace(/\D/g, '');
+            return cleanTarget.includes(cleanLogNum) || cleanLogNum.includes(cleanTarget);
+          });
 
-        if (matchingLog) {
-          setSelectedLog(matchingLog);
-          setSessionLevel(2);
-          setIsReceivingOtp(false);
-          return;
-        } else if (logs.length > 0) {
-          // If no exact match yet, show newest authentic message from stream
-          setSelectedLog(logs[0]);
-          setSessionLevel(2);
-          setIsReceivingOtp(false);
-          return;
+          if (matchingLog) {
+            setSelectedLog(matchingLog);
+            setSessionLevel(2);
+            setIsReceivingOtp(false);
+            return;
+          }
         }
       }
     } catch (e) {
@@ -280,15 +303,12 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
                 {numberLogs.length === 0 ? (
                   <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950/30 space-y-3">
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                      No OTPs received on this number yet.
-                    </p>
-                    <button
-                      onClick={handleTriggerLiveOtp}
-                      className="px-4 py-2 bg-[#65a30d] text-white rounded-xl text-xs font-bold hover:bg-[#54870a] transition cursor-pointer"
-                    >
-                      Receive First Test OTP Now
-                    </button>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        No OTPs received on this number yet. Waiting for incoming SMS in real-time...
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/60 shadow-xs">
@@ -309,7 +329,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
                             {log.otp && (
                               <span className="px-3 py-0.5 rounded-lg text-xs font-black font-mono tracking-widest bg-lime-500/15 text-lime-700 dark:text-lime-300 border border-lime-500/40">
-                                OTP: {log.otp}
+                                OTP: XXXX
                               </span>
                             )}
 
@@ -323,7 +343,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                           </div>
 
                           <p className="text-xs text-slate-700 dark:text-slate-300 font-medium line-clamp-2">
-                            {log.text}
+                            {maskSmsText(log.text)}
                           </p>
 
                           <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 block">
@@ -365,14 +385,14 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                   {/* Gigantic Spaced OTP Digits */}
                   <div className="py-2">
                     <div className="inline-block px-6 py-3 rounded-2xl bg-black/60 border border-lime-500/40 text-3xl sm:text-5xl font-black font-mono tracking-[0.25em] sm:tracking-[0.35em] text-white select-all shadow-inner">
-                      {selectedLog.otp}
+                      XXXX
                     </div>
                   </div>
 
                   {/* Instant 1-Click Copy OTP Button */}
                   <div className="pt-1 flex items-center justify-center">
                     <button
-                      onClick={() => handleCopyOtp(selectedLog.otp || '')}
+                      onClick={() => handleCopyOtp('XXXX')}
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#65a30d] hover:bg-[#54870a] text-white font-black text-sm transition shadow-lg shadow-lime-950/50 cursor-pointer active:scale-95"
                     >
                       {copiedOtp ? (
@@ -396,7 +416,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                     Delivery Failed
                   </h4>
                   <p className="text-xs text-rose-600 dark:text-rose-400 max-w-md mx-auto">
-                    {selectedLog.text}
+                    {maskSmsText(selectedLog.text)}
                   </p>
                 </div>
               )}
@@ -408,7 +428,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                     Full SMS Payload Text
                   </span>
                   <button
-                    onClick={() => handleCopyText(selectedLog.text)}
+                    onClick={() => handleCopyText(maskSmsText(selectedLog.text))}
                     className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
                   >
                     {copiedText ? <Check className="w-3.5 h-3.5 text-lime-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -416,7 +436,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                   </button>
                 </div>
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed font-mono select-all">
-                  {selectedLog.text}
+                  {maskSmsText(selectedLog.text)}
                 </div>
               </div>
 

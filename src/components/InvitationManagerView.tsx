@@ -16,8 +16,25 @@ import {
   DollarSign, 
   ArrowRight,
   Link2,
-  AlertTriangle
+  AlertTriangle,
+  X,
+  UserCheck,
+  UserX
 } from 'lucide-react';
+
+interface PendingUserItem {
+  id: string;
+  name: string;
+  email: string;
+  pass?: string;
+  role?: string;
+  balance?: number;
+  status: string;
+  registeredAt?: string;
+  activatedAt?: string;
+  location?: string;
+  phone?: string;
+}
 
 interface InvitationItem {
   token: string;
@@ -44,7 +61,14 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
   const [name, setName] = useState('');
   const [role, setRole] = useState<'User' | 'VIP' | 'Sub-Admin'>('User');
   const [balance, setBalance] = useState('50.00');
-  const [inviter, setInviter] = useState('Admin Support');
+  const [inviter, setInviter] = useState('VoltxSMS Support');
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('codeflow_base_url');
+    if (saved && saved.trim() && !saved.includes('run.app') && !saved.includes('localhost') && !saved.includes('ais-')) {
+      return saved.trim();
+    }
+    return 'https://codeflowsms.vercel.app';
+  });
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -59,6 +83,15 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
     resolution?: string;
     error?: string;
   } | null>(null);
+
+  // Helper to ensure invitation link uses clean domain
+  const getCleanLink = (inv: { link?: string; token: string }) => {
+    if (inv.link && inv.link.trim() && !inv.link.includes('run.app') && !inv.link.includes('localhost') && !inv.link.includes('ais-')) {
+      return inv.link.trim();
+    }
+    const base = (customBaseUrl || 'https://codeflowsms.vercel.app').trim().replace(/\/+$/, '');
+    return `${base}/#onboarding?token=${inv.token}`;
+  };
 
   // Fetch invitations from server
   const fetchInvitations = async () => {
@@ -75,9 +108,113 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
     }
   };
 
+  const [pendingUsers, setPendingUsers] = useState<PendingUserItem[]>([]);
+
+  // Fetch pending registration requests from server and localStorage
+  const fetchPendingUsers = async () => {
+    try {
+      const res = await fetch('/api/pending-users');
+      const data = await res.json();
+      let serverPending: PendingUserItem[] = [];
+      if (data.success && Array.isArray(data.pending)) {
+        serverPending = data.pending;
+      }
+
+      // Merge with localStorage pending activations
+      const localRaw = localStorage.getItem('codeflow_pending_activations');
+      const localList: PendingUserItem[] = localRaw ? JSON.parse(localRaw) : [];
+
+      const mergedMap = new Map<string, PendingUserItem>();
+      [...serverPending, ...localList].forEach((item) => {
+        if (item.email) {
+          mergedMap.set(item.email.toLowerCase(), item);
+        }
+      });
+
+      setPendingUsers(Array.from(mergedMap.values()));
+    } catch (e) {
+      console.warn('Failed to fetch pending users:', e);
+    }
+  };
+
+  const handleApproveUser = async (user: PendingUserItem) => {
+    try {
+      // 1. Call server API
+      const res = await fetch('/api/approve-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, id: user.id }),
+      });
+      const data = await res.json();
+
+      // 2. Update local storage for Admin & registered users
+      const pendingRaw = localStorage.getItem('codeflow_pending_activations');
+      const pendingList = pendingRaw ? JSON.parse(pendingRaw) : [];
+      const updatedPending = pendingList.filter((u: any) => u.email.toLowerCase() !== user.email.toLowerCase());
+      localStorage.setItem('codeflow_pending_activations', JSON.stringify(updatedPending));
+
+      // Add to registered users list for login
+      const regRaw = localStorage.getItem('codeflow_registered_users');
+      const regList = regRaw ? JSON.parse(regRaw) : [];
+      if (!regList.some((u: any) => u.email.toLowerCase() === user.email.toLowerCase())) {
+        regList.push({
+          name: user.name,
+          email: user.email,
+          pass: user.pass || 'CodeFlow2026',
+          activatedAt: new Date().toISOString(),
+        });
+        localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
+      }
+
+      // Update admin users list
+      const adminUsersRaw = localStorage.getItem('codeflow_admin_users_list_v2');
+      const adminUsers = adminUsersRaw ? JSON.parse(adminUsersRaw) : [];
+      const updatedAdminUsers = adminUsers.map((u: any) => {
+        if (u.email.toLowerCase() === user.email.toLowerCase()) {
+          return { ...u, status: 'Active', isOnline: true, lastActive: 'Active now' };
+        }
+        return u;
+      });
+      localStorage.setItem('codeflow_admin_users_list_v2', JSON.stringify(updatedAdminUsers));
+
+      // Trigger storage event for real-time update in open tabs
+      window.dispatchEvent(new Event('storage'));
+
+      showToast(`✅ Account Approved & Activated for ${user.email}!`);
+      fetchPendingUsers();
+    } catch (err: any) {
+      showToast('Error approving account: ' + err.message);
+    }
+  };
+
+  const handleRejectUser = async (user: PendingUserItem) => {
+    try {
+      await fetch('/api/reject-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, id: user.id }),
+      });
+
+      const pendingRaw = localStorage.getItem('codeflow_pending_activations');
+      const pendingList = pendingRaw ? JSON.parse(pendingRaw) : [];
+      const updatedPending = pendingList.filter((u: any) => u.email.toLowerCase() !== user.email.toLowerCase());
+      localStorage.setItem('codeflow_pending_activations', JSON.stringify(updatedPending));
+
+      window.dispatchEvent(new Event('storage'));
+      showToast(`Rejected registration request for ${user.email}`);
+      fetchPendingUsers();
+    } catch (err: any) {
+      showToast('Error rejecting user: ' + err.message);
+    }
+  };
+
   useEffect(() => {
     fetchInvitations();
-    const interval = setInterval(fetchInvitations, 5000);
+    fetchPendingUsers();
+    const interval = setInterval(() => {
+      fetchInvitations();
+      fetchPendingUsers();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -90,7 +227,9 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
 
     setIsGenerating(true);
     try {
-      const origin = window.location.origin;
+      const cleanBaseUrl = (customBaseUrl || 'https://codeflowsms.vercel.app').trim().replace(/\/+$/, '');
+      localStorage.setItem('codeflow_base_url', cleanBaseUrl);
+      
       const res = await fetch('/api/create-invitation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,8 +238,8 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           name: name.trim() || email.split('@')[0],
           role,
           balance: parseFloat(balance) || 50.0,
-          inviter: inviter.trim() || 'Admin Support',
-          hostUrl: origin,
+          inviter: inviter.trim() || 'VoltxSMS Support',
+          hostUrl: cleanBaseUrl,
         }),
       });
 
@@ -108,7 +247,15 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
       if (data.success && data.invitation) {
         const inv = data.invitation;
         setActiveInvite(inv);
-        showToast(`10-Minute Invitation Link generated for ${inv.email}!`);
+        const finalUrl = getCleanLink(inv);
+        try {
+          await navigator.clipboard.writeText(finalUrl);
+          setCopiedToken(inv.token);
+          setTimeout(() => setCopiedToken(null), 4000);
+          showToast(`✅ Link created and copied to clipboard! (Expires in 5 mins)`);
+        } catch {
+          showToast(`5-Minute Invitation Link generated for ${inv.email}!`);
+        }
         fetchInvitations();
       } else {
         showToast('Error: ' + (data.error || 'Failed to create invitation'));
@@ -123,7 +270,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
   const handleSendEmail = async (targetInvite: InvitationItem) => {
     setIsSendingEmail(true);
     try {
-      const inviteUrl = targetInvite.link || `${window.location.origin}/#onboarding?token=${targetInvite.token}`;
+      const inviteUrl = getCleanLink(targetInvite);
       const res = await fetch('/api/send-invitation-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -131,7 +278,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           email: targetInvite.email,
           link: inviteUrl,
           name: targetInvite.name,
-          inviter: targetInvite.inviter || 'Traffic Analytics Support',
+          inviter: targetInvite.inviter || 'VoltxSMS Support',
         }),
       });
 
@@ -206,14 +353,14 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           </div>
           <div>
             <h3 className="text-lg font-black text-white flex items-center gap-2.5">
-              <span>10-Minute User Verification Links</span>
+              <span>5-Minute User Verification Links</span>
               <span className="px-2.5 py-0.5 rounded-full bg-lime-950 text-lime-400 border border-lime-800 text-[10px] font-extrabold uppercase tracking-wider">
                 4-Step Onboarding
               </span>
             </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
               Generate personalized verification links that grant prospective users access to the 4-step onboarding interface (About You, Location, Contact, Security). 
-              For security, links automatically expire in <strong>exactly 10 minutes</strong> and are exclusive to the recipient.
+              For security, links automatically expire in <strong>exactly 5 minutes</strong> and are exclusive to the recipient.
             </p>
           </div>
         </div>
@@ -227,6 +374,43 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
         </button>
       </div>
 
+      {/* SMTP Brevo Security Alert Notice */}
+      {emailErrorNotice && (
+        <div className="p-5 rounded-3xl bg-amber-950/50 border border-amber-500/50 text-amber-200 text-xs space-y-3 shadow-xl animate-fade-in">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 font-black text-amber-300 text-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
+              <span>Brevo SMTP Notice (525 Unauthorized IP)</span>
+            </div>
+            <button
+              onClick={() => setEmailErrorNotice(null)}
+              className="text-amber-400 hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="leading-relaxed text-slate-300">
+            {emailErrorNotice.resolution || emailErrorNotice.error}
+          </p>
+          <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-[11px] font-mono text-cyan-300 flex flex-wrap items-center justify-between gap-2">
+            <span>Detected Outbound Cloud IP: <strong className="text-amber-300">{emailErrorNotice.serverIp || '34.96.48.153'}</strong></span>
+            <a
+              href="https://app.brevo.com/settings/security/ip-management"
+              target="_blank"
+              rel="noreferrer"
+              className="text-amber-400 underline font-sans font-bold flex items-center gap-1 hover:text-amber-300"
+            >
+              <span>Manage Brevo Authorized IPs</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="p-3 rounded-xl bg-lime-950/60 border border-lime-500/40 text-lime-300 text-xs font-semibold flex items-center gap-2">
+            <Check className="w-4 h-4 text-lime-400 shrink-0" />
+            <span>Your 5-minute onboarding link is ready below! You can directly copy and send it to your user via WhatsApp, Telegram, or Email.</span>
+          </div>
+        </div>
+      )}
+
       {/* Main Grid: Generator Form & Active Link Card */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -235,16 +419,16 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h4 className="text-sm font-black text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-lime-400" />
-              <span>Generate New 10-Minute Link</span>
+              <span>Generate New 5-Minute Link</span>
             </h4>
             <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>10-Min Expiry</span>
+              <span>5-Min Expiry</span>
             </span>
           </div>
 
           <form onSubmit={handleCreateInvitation} className="space-y-4">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <label className="text-xs font-bold text-slate-300">
                 RECIPIENT EMAIL <span className="text-lime-400">*</span>
               </label>
@@ -254,79 +438,17 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. client.traffic@gmail.com"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                className="w-full px-4 py-3 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-sm font-semibold text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
               />
-              <p className="text-[11px] text-slate-500">
-                The link can only be used by this verified recipient.
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                ইউজারের ইমেইল দিয়ে সাবমিট করলেই নিচে স্বয়ংক্রিয়ভাবে অ্যাকাউন্ট তৈরির কাস্টম ইউআরএল জেনারেট ও কপি হয়ে যাবে।
               </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300">
-                PRE-ASSIGNED USER FULL NAME
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Md Ruman Hossain"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-              />
-              <p className="text-[11px] text-slate-500">
-                This exact name will be locked and displayed in their profile view.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
-                  STARTING BALANCE ($)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-bold">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={balance}
-                    onChange={(e) => setBalance(e.target.value)}
-                    className="w-full pl-7 pr-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
-                  ASSIGNED ROLE
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
-                >
-                  <option value="User">User (Standard Agent)</option>
-                  <option value="VIP">VIP (Priority Routes)</option>
-                  <option value="Sub-Admin">Sub-Admin (Moderator)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300">
-                INVITER DISPLAY NAME
-              </label>
-              <input
-                type="text"
-                value={inviter}
-                onChange={(e) => setInviter(e.target.value)}
-                placeholder="e.g. Master Admin or Support Team"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-              />
             </div>
 
             <button
               type="submit"
               disabled={isGenerating}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs sm:text-sm shadow-lg shadow-lime-950 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50 mt-2"
+              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs sm:text-sm shadow-lg shadow-lime-950/50 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50 mt-2"
             >
               {isGenerating ? (
                 <>
@@ -336,7 +458,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>Generate 10-Minute Invitation Link</span>
+                  <span>Generate 5-Minute Invitation Link</span>
                 </>
               )}
             </button>
@@ -398,12 +520,12 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                     <input
                       type="text"
                       readOnly
-                      value={activeInvite.link || `${window.location.origin}/#onboarding?token=${activeInvite.token}`}
-                      className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 select-all"
+                      value={getCleanLink(activeInvite)}
+                      className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-cyan-300 select-all"
                     />
                     <button
                       type="button"
-                      onClick={() => handleCopyLink(activeInvite.link || `${window.location.origin}/#onboarding?token=${activeInvite.token}`, activeInvite.token)}
+                      onClick={() => handleCopyLink(getCleanLink(activeInvite), activeInvite.token)}
                       className="px-3.5 py-2 bg-lime-600 hover:bg-lime-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shrink-0 transition"
                     >
                       {copiedToken === activeInvite.token ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -420,7 +542,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>ইউজারকে সরাসরি পাঠানোর লিংক (Direct Share Link)</span>
                       </span>
-                      <span className="text-[10px] text-lime-400 font-mono font-bold">10-Min Active</span>
+                      <span className="text-[10px] text-lime-400 font-mono font-bold">5-Min Active</span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
                       নিচের বাটনে চাপ দিয়ে লিংকটি কপি করে নিন এবং সরাসরি আপনার ইমেইল, WhatsApp বা Telegram দিয়ে ইউজারকে পাঠিয়ে দিন:
@@ -428,14 +550,14 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => handleCopyLink(activeInvite.link || `${window.location.origin}/#onboarding?token=${activeInvite.token}`, activeInvite.token)}
+                        onClick={() => handleCopyLink(getCleanLink(activeInvite), activeInvite.token)}
                         className="flex-1 py-2.5 px-3 rounded-xl bg-lime-500 hover:bg-lime-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition"
                       >
                         {copiedToken === activeInvite.token ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         <span>{copiedToken === activeInvite.token ? 'Link Copied!' : 'Copy Onboarding Link'}</span>
                       </button>
                       <a
-                        href={`mailto:${activeInvite.email}?subject=Your%20Invitation%20to%20Traffic%20Analytics&body=Hello%20${encodeURIComponent(activeInvite.name)},%0A%0APlease%20use%20the%20following%20link%20to%20complete%20your%20account%20setup%20(valid%20for%2010%20minutes):%0A${encodeURIComponent(activeInvite.link || `${window.location.origin}/#onboarding?token=${activeInvite.token}`)}%0A%0AOnce%20completed,%20your%20account%20will%20be%20reviewed%20and%20approved.`}
+                        href={`mailto:${activeInvite.email}?subject=Your%20Invitation%20to%20VoltxSMS&body=Hello%20${encodeURIComponent(activeInvite.name)},%0A%0APlease%20use%20the%20following%20link%20to%20complete%20your%20account%20setup%20(valid%20for%205%20minutes):%0A${encodeURIComponent(getCleanLink(activeInvite))}%0A%0AOnce%20completed,%20your%20account%20will%20be%20reviewed%20and%20approved.`}
                         className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-1.5 border border-cyan-500/30 transition cursor-pointer"
                         title="Send via your Default Mail Client (Gmail / Outlook)"
                       >
@@ -446,7 +568,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                   </div>
 
                   <a
-                    href={activeInvite.link || `${window.location.origin}/#onboarding?token=${activeInvite.token}`}
+                    href={getCleanLink(activeInvite)}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition text-center border border-slate-700"
@@ -464,7 +586,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 <div>
                   <h5 className="text-xs font-bold text-slate-300">No Link Generated Yet</h5>
                   <p className="text-xs text-slate-500 mt-1 max-w-xs">
-                    Fill out the form on the left to generate a 10-minute temporary link and dispatch it to the user's email.
+                    Fill out the form on the left to generate a 5-minute temporary link and dispatch it to the user's email.
                   </p>
                 </div>
               </div>
@@ -473,9 +595,91 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
 
           <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2.5">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Emails sent with Brevo Relay automatically embed the 10-minute security expiration warning.</span>
+            <span>Emails sent with Brevo Relay automatically embed the 5-minute security expiration warning.</span>
           </div>
         </div>
+      </div>
+
+      {/* SECTION: Real-time Pending Approvals / Processing Requests */}
+      <div className="p-6 rounded-3xl bg-slate-900/90 border border-amber-500/30 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h4 className="text-sm font-black text-white flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+              <span>Real-time Processing & Pending Approvals (প্রসেসিং অনুরোধ) ({pendingUsers.length})</span>
+            </h4>
+            <p className="text-xs text-slate-400 mt-0.5">
+              ইউজাররা লিংক দিয়ে অনবোর্ডিং ফর্ম ফিলআপ করলে রিয়েল টাইমে এখানে আসবে। আপনি অ্যাপ্রুভ করলে ইউজারের পেজ সাথে সাথে সাকসেস মেসেজ পেয়ে একটিভ হবে।
+            </p>
+          </div>
+          {pendingUsers.length > 0 && (
+            <span className="px-3 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-700 text-xs font-black animate-pulse">
+              {pendingUsers.length} PENDING APPROVAL
+            </span>
+          )}
+        </div>
+
+        {pendingUsers.length === 0 ? (
+          <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-slate-600 mx-auto" />
+            <p className="text-xs font-bold text-slate-400">কোনো প্রসেসিং বা পেন্ডিং অ্যাকাউন্ট অনুরোধ পাওয়া যায়নি।</p>
+            <p className="text-[11px] text-slate-500">ইউজার অনবোর্ডিং ফর্ম সাবমিট করলেই এখানে রিয়েল-টাইমে প্রদর্শিত হবে।</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pendingUsers.map((user) => (
+              <div key={user.id} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-3 shadow-md relative overflow-hidden">
+                <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                  <div>
+                    <h5 className="text-sm font-black text-white flex items-center gap-1.5">
+                      <span>{user.name}</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-mono">
+                        {user.id}
+                      </span>
+                    </h5>
+                    <p className="text-xs font-mono text-cyan-400">{user.email}</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-950/90 text-amber-400 border border-amber-600 text-[10px] font-black tracking-wider flex items-center gap-1">
+                    <Clock className="w-3 h-3 animate-pulse" />
+                    PROCESSING
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="block text-slate-500 text-[10px]">Location:</span>
+                    <span className="font-semibold text-slate-200">{user.location || 'Dhaka, Bangladesh'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-500 text-[10px]">Submitted:</span>
+                    <span className="font-semibold text-slate-200">
+                      {user.registeredAt ? new Date(user.registeredAt).toLocaleTimeString() : 'Just now'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleApproveUser(user)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-lime-500 hover:bg-lime-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>Approve Account (অনুমোদন করুন)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectUser(user)}
+                    className="py-2.5 px-3 rounded-xl bg-red-950/80 hover:bg-red-900 text-red-300 font-bold text-xs flex items-center justify-center gap-1 border border-red-800 transition cursor-pointer"
+                  >
+                    <UserX className="w-4 h-4" />
+                    <span>Reject</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* TABLE: All Generated Links */}
@@ -484,7 +688,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           <div>
             <h4 className="text-sm font-black text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-lime-400" />
-              <span>All Generated 10-Minute Verification Links ({invitations.length})</span>
+              <span>All Generated 5-Minute Verification Links ({invitations.length})</span>
             </h4>
             <p className="text-xs text-slate-400 mt-0.5">
               Live tracking of link statuses, remaining countdowns, and completion logs.
@@ -499,7 +703,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 <th className="py-3 px-4">Recipient & Pre-assigned Name</th>
                 <th className="py-3 px-3">Role & Balance</th>
                 <th className="py-3 px-3">Created</th>
-                <th className="py-3 px-3">10-Min Status</th>
+                <th className="py-3 px-3">5-Min Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -556,7 +760,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => handleCopyLink(inv.link || `${window.location.origin}/#onboarding?token=${inv.token}`, inv.token)}
+                            onClick={() => handleCopyLink(getCleanLink(inv), inv.token)}
                             title="Copy Link"
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition"
                           >
@@ -574,7 +778,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                           </button>
 
                           <a
-                            href={inv.link || `${window.location.origin}/#onboarding?token=${inv.token}`}
+                            href={getCleanLink(inv)}
                             target="_blank"
                             rel="noreferrer"
                             title="Open Onboarding Wizard"

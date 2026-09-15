@@ -17,6 +17,14 @@ import {
 import { RealSmsLog } from '../types.js';
 import { getUserSmsLogs } from '../utils/realtimeSmsService.js';
 
+const maskSmsText = (text: string | undefined | null): string => {
+  if (!text) return '';
+  return text
+    .replace(/\b[0-9]{4,8}\b/g, 'XXXX')
+    .replace(/\b[0-9]{3,4}[-\s][0-9]{3,4}\b/g, 'XXXX')
+    .replace(/\b[Gg]-[0-9]{4,8}\b/gi, 'G-XXXX');
+};
+
 interface YourMessagesModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -348,11 +356,11 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
                           OTP CODE
                         </span>
                         <span className="font-mono text-base sm:text-lg font-black tracking-widest text-slate-900 bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                          {log.otp}
+                          XXXX
                         </span>
                       </div>
                       <button
-                        onClick={() => handleCopy(log.otp!, log.id)}
+                        onClick={() => handleCopy('XXXX', log.id)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lime-600 hover:bg-lime-700 text-white text-xs font-bold shadow-xs active:scale-95 transition cursor-pointer"
                       >
                         {copiedId === log.id ? (
@@ -371,7 +379,7 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
                   )}
 
                   <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm text-slate-800 leading-relaxed font-mono select-all">
-                    {log.text}
+                    {maskSmsText(log.text)}
                   </div>
                 </div>
               ))}
@@ -590,12 +598,12 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
                           OTP CODE:
                         </span>
                         <span className="text-sm font-mono tracking-widest text-slate-900">
-                          {log.otp}
+                          XXXX
                         </span>
                       </div>
 
                       <button
-                        onClick={() => handleCopy(log.otp!, log.id + '_otp')}
+                        onClick={() => handleCopy('XXXX', log.id + '_otp')}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
                         title="Copy OTP Code"
                       >
@@ -616,16 +624,16 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
 
                   {/* Message Content in Distinct Bordered Box (Live Test Style) */}
                   <div className="relative p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 leading-relaxed font-sans select-text">
-                    <p>{log.text}</p>
+                    <p>{maskSmsText(log.text)}</p>
 
                     <button
-                      onClick={() => handleCopy(log.text, log.id + '_txt')}
+                      onClick={() => handleCopy(maskSmsText(log.text), log.id + '_txt')}
                       className="absolute top-2.5 right-2.5 px-2 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-[11px] font-bold transition flex items-center gap-1 shadow-xs cursor-pointer opacity-0 group-hover:opacity-100"
                       title="Copy full message text"
                     >
                       {copiedId === log.id + '_txt' ? (
                         <>
-                          <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
                           <span className="text-emerald-700">Copied</span>
                         </>
                       ) : (

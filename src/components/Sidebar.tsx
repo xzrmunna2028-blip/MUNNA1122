@@ -92,8 +92,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
-  const accountCode = '8492019384'; // 10-digit Active Account Code
-  const apiKey = 'sk_live_7B3KOCo2dfr8yvPsAI345HYeuPGBsCIzkpy3dz2Z'; // Live IPRN Production API Key
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || 'xzrmunna7788@gmail.com').trim().toLowerCase();
+  const userHash = currentLoggedUser.split('').reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) % 1000000000, 12345678).toString(36);
+  const accountCode = (Math.abs(currentLoggedUser.split('').reduce((acc, char) => acc * 33 + char.charCodeAt(0), 5381)) % 9000000000 + 1000000000).toString();
+  const apiKey = `sk_live_${userHash}_${accountCode.slice(0, 8)}`;
 
   const handleCopyKey = () => {
     navigator.clipboard.writeText(apiKey);

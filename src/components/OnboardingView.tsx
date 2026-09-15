@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, 
   MapPin, 
@@ -19,7 +20,14 @@ import {
   Bell,
   Mail,
   Shield,
-  ArrowRight
+  ArrowRight,
+  XCircle,
+  Search,
+  Check,
+  Zap,
+  KeyRound,
+  ShieldAlert,
+  CreditCard
 } from 'lucide-react';
 
 interface OnboardingViewProps {
@@ -40,32 +48,93 @@ interface InvitationDetails {
   status: 'active' | 'used' | 'expired';
 }
 
+export interface CountryItem {
+  name: string;
+  code: string;
+  flag: string;
+  areaCode: string;
+  continent: 'Asia' | 'Global';
+}
+
+export const ALL_COUNTRIES: CountryItem[] = [
+  // Asian Continent (Suggested First)
+  { name: 'Bangladesh', code: 'BD', flag: '🇧🇩', areaCode: '+880', continent: 'Asia' },
+  { name: 'India', code: 'IN', flag: '🇮🇳', areaCode: '+91', continent: 'Asia' },
+  { name: 'Pakistan', code: 'PK', flag: '🇵🇰', areaCode: '+92', continent: 'Asia' },
+  { name: 'Saudi Arabia', code: 'SA', flag: '🇸🇦', areaCode: '+966', continent: 'Asia' },
+  { name: 'United Arab Emirates', code: 'AE', flag: '🇦🇪', areaCode: '+971', continent: 'Asia' },
+  { name: 'Qatar', code: 'QA', flag: '🇶🇦', areaCode: '+974', continent: 'Asia' },
+  { name: 'Kuwait', code: 'KW', flag: '🇰🇼', areaCode: '+965', continent: 'Asia' },
+  { name: 'Oman', code: 'OM', flag: '🇴🇲', areaCode: '+968', continent: 'Asia' },
+  { name: 'Bahrain', code: 'BH', flag: '🇧🇭', areaCode: '+973', continent: 'Asia' },
+  { name: 'Malaysia', code: 'MY', flag: '🇲🇾', areaCode: '+60', continent: 'Asia' },
+  { name: 'Singapore', code: 'SG', flag: '🇸🇬', areaCode: '+65', continent: 'Asia' },
+  { name: 'Indonesia', code: 'ID', flag: '🇮🇩', areaCode: '+62', continent: 'Asia' },
+  { name: 'Thailand', code: 'TH', flag: '🇹🇭', areaCode: '+66', continent: 'Asia' },
+  { name: 'Vietnam', code: 'VN', flag: '🇻🇳', areaCode: '+84', continent: 'Asia' },
+  { name: 'Nepal', code: 'NP', flag: '🇳🇵', areaCode: '+977', continent: 'Asia' },
+  { name: 'Sri Lanka', code: 'LK', flag: '🇱🇰', areaCode: '+94', continent: 'Asia' },
+  { name: 'Japan', code: 'JP', flag: '🇯🇵', areaCode: '+81', continent: 'Asia' },
+  { name: 'South Korea', code: 'KR', flag: '🇰🇷', areaCode: '+82', continent: 'Asia' },
+  { name: 'Philippines', code: 'PH', flag: '🇵🇭', areaCode: '+63', continent: 'Asia' },
+  { name: 'China', code: 'CN', flag: '🇨🇳', areaCode: '+86', continent: 'Asia' },
+  { name: 'Turkey', code: 'TR', flag: '🇹🇷', areaCode: '+90', continent: 'Asia' },
+  { name: 'Iraq', code: 'IQ', flag: '🇮🇶', areaCode: '+964', continent: 'Asia' },
+  { name: 'Jordan', code: 'JO', flag: '🇯🇴', areaCode: '+962', continent: 'Asia' },
+
+  // Global Continent
+  { name: 'United States', code: 'US', flag: '🇺🇸', areaCode: '+1', continent: 'Global' },
+  { name: 'United Kingdom', code: 'GB', flag: '🇬🇧', areaCode: '+44', continent: 'Global' },
+  { name: 'Canada', code: 'CA', flag: '🇨🇦', areaCode: '+1', continent: 'Global' },
+  { name: 'Australia', code: 'AU', flag: '🇦🇺', areaCode: '+61', continent: 'Global' },
+  { name: 'Germany', code: 'DE', flag: '🇩🇪', areaCode: '+49', continent: 'Global' },
+  { name: 'France', code: 'FR', flag: '🇫🇷', areaCode: '+33', continent: 'Global' },
+  { name: 'Italy', code: 'IT', flag: '🇮🇹', areaCode: '+39', continent: 'Global' },
+  { name: 'Spain', code: 'ES', flag: '🇪🇸', areaCode: '+34', continent: 'Global' },
+  { name: 'Russia', code: 'RU', flag: '🇷🇺', areaCode: '+7', continent: 'Global' },
+  { name: 'Brazil', code: 'BR', flag: '🇧🇷', areaCode: '+55', continent: 'Global' },
+  { name: 'South Africa', code: 'ZA', flag: '🇿🇦', areaCode: '+27', continent: 'Global' },
+];
+
 export const OnboardingView: React.FC<OnboardingViewProps> = ({
   token,
   onComplete,
   onGoToLogin,
-  darkMode = false,
+  darkMode = true,
 }) => {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isPendingSubmitted, setIsPendingSubmitted] = useState<boolean>(false);
+  const [isApprovedSuccess, setIsApprovedSuccess] = useState<boolean>(false);
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
   const [registeredName, setRegisteredName] = useState<string>('');
+
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isExpired, setIsExpired] = useState<boolean>(false);
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(600); // 10 minutes default
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(900); // 15 minutes default
 
-  // Step 1: About You
+  // Step 1: About You (User fills in their own details)
   const [firstName, setFirstName] = useState<string>('');
   const [lastName, setLastName] = useState<string>('');
-  const [birthDate, setBirthDate] = useState<string>('1998-05-15');
+  const [birthDate, setBirthDate] = useState<string>('');
 
-  // Step 2: Location
+  // Step 2: Location & Interactive Country Search
   const [country, setCountry] = useState<string>('Bangladesh');
-  const [city, setCity] = useState<string>('Khulna');
-  const [address, setAddress] = useState<string>('Vill: Paikgacha, Post: Kamilmuni');
+  const [city, setCity] = useState<string>('');
+  const [address, setAddress] = useState<string>('');
+  const [countrySearch, setCountrySearch] = useState<string>('');
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState<boolean>(false);
+
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return ALL_COUNTRIES;
+    const q = countrySearch.toLowerCase().trim();
+    return ALL_COUNTRIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q) || c.areaCode.includes(q)
+    );
+  }, [countrySearch]);
+
   const [timezone, setTimezone] = useState<string>(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dhaka';
@@ -75,74 +144,127 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
   });
 
   // Step 3: Contact
-  const [phone, setPhone] = useState<string>('+880 1647-783682');
-  const [telegram, setTelegram] = useState<string>('@ruman_traffic');
+  const [phone, setPhone] = useState<string>('+880 ');
+  const [telegram, setTelegram] = useState<string>('');
   const [notificationChannel, setNotificationChannel] = useState<string>('Email (Primary) & Telegram Alerts');
 
   // Step 4: Security
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [securityPin, setSecurityPin] = useState<string>('1234');
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+  const [securityPin, setSecurityPin] = useState<string>('');
   const [agreedTerms, setAgreedTerms] = useState<boolean>(true);
 
-  // 1. Verify Token on Mount
+  // Poll server & local storage for real-time approval status
+  useEffect(() => {
+    if (!isPendingSubmitted || !registeredEmail) return;
+
+    const checkApproval = async () => {
+      try {
+        // 1. Check server API
+        const res = await fetch(`/api/user-status/${encodeURIComponent(registeredEmail)}`);
+        const data = await res.json();
+        if (data.success && data.status === 'Active') {
+          setIsApprovedSuccess(true);
+          return;
+        }
+
+        // 2. Fallback check local storage
+        const regRaw = localStorage.getItem('codeflow_registered_users');
+        const regList = regRaw ? JSON.parse(regRaw) : [];
+        if (regList.some((u: any) => u.email.toLowerCase() === registeredEmail.toLowerCase())) {
+          setIsApprovedSuccess(true);
+          return;
+        }
+
+        const adminRaw = localStorage.getItem('codeflow_admin_users_list_v2');
+        const adminUsers = adminRaw ? JSON.parse(adminRaw) : [];
+        const u = adminUsers.find((item: any) => item.email.toLowerCase() === registeredEmail.toLowerCase());
+        if (u && u.status === 'Active') {
+          setIsApprovedSuccess(true);
+        }
+      } catch (e) {
+        console.warn('Error checking user approval status:', e);
+      }
+    };
+
+    checkApproval();
+    const interval = setInterval(checkApproval, 2000);
+    return () => clearInterval(interval);
+  }, [isPendingSubmitted, registeredEmail]);
+
+  // 1. Verify Token on Mount or when Token changes
   useEffect(() => {
     let timerId: any = null;
 
     const verifyToken = async () => {
+      if (!token || !token.trim()) {
+        setIsExpired(true);
+        setErrorMessage('Invalid invitation token. Please check your link.');
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
+      setIsExpired(false);
+      setErrorMessage('');
+
       try {
-        const res = await fetch(`/api/verify-invitation/${encodeURIComponent(token)}`);
+        const cleanToken = token.trim();
+        const res = await fetch(`/api/verify-invitation/${encodeURIComponent(cleanToken)}`);
         const data = await res.json();
 
         if (!data.valid) {
           setIsExpired(true);
-          setErrorMessage(data.message || 'This invitation link has expired or is invalid.');
+          setErrorMessage(data.message || 'LINK EXPIRED');
           setLoading(false);
           return;
         }
 
         const inv = data.invitation;
         setInvitation(inv);
+        setIsExpired(false);
+        setErrorMessage('');
 
-        // Pre-fill name parts if available
-        const nameParts = (inv.name || '').trim().split(' ');
-        if (nameParts.length > 1) {
-          setFirstName(nameParts[0]);
-          setLastName(nameParts.slice(1).join(' '));
-        } else if (nameParts.length === 1 && nameParts[0]) {
-          setFirstName(nameParts[0]);
-          setLastName('');
+        if (inv.name && !firstName) {
+          const parts = inv.name.split(' ');
+          setFirstName(parts[0] || '');
+          if (parts.length > 1) {
+            setLastName(parts.slice(1).join(' '));
+          }
         }
 
-        // Calculate initial remaining seconds
+        // Calculate initial remaining seconds (defaults to 15 mins / 900s)
         const remSec = data.remainingSeconds || Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
         setSecondsRemaining(remSec);
 
         if (remSec <= 0) {
           setIsExpired(true);
-          setErrorMessage('This invitation link has expired (10-minute validity exceeded).');
+          setErrorMessage('LINK EXPIRED');
         }
 
         setLoading(false);
       } catch (err: any) {
-        // Fallback: check if stored in localStorage
         console.warn('Backend verify check error, using local fallback:', err);
         try {
           const localStr = localStorage.getItem('codeflow_invitations_cache');
           if (localStr) {
             const list = JSON.parse(localStr);
-            const found = list.find((i: any) => i.token === token);
+            const found = list.find((i: any) => i.token.trim().toLowerCase() === token.trim().toLowerCase());
             if (found) {
               const now = Date.now();
               if (now > found.expiresAt) {
                 setIsExpired(true);
-                setErrorMessage('This invitation link has expired after 10 minutes.');
+                setErrorMessage('LINK EXPIRED');
               } else {
                 setInvitation(found);
-                setSecondsRemaining(Math.floor((found.expiresAt - now) / 1000));
+                setIsExpired(false);
+                setSecondsRemaining(Math.max(0, Math.floor((found.expiresAt - now) / 1000)));
               }
+            } else {
+              setIsExpired(true);
+              setErrorMessage('Invitation not found.');
             }
           }
         } catch (e) {}
@@ -157,7 +279,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     };
   }, [token]);
 
-  // Live 10-Minute Countdown Clock
+  // Live 15-Minute Countdown Clock
   useEffect(() => {
     if (loading || isExpired) return;
 
@@ -166,7 +288,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         if (prev <= 1) {
           clearInterval(interval);
           setIsExpired(true);
-          setErrorMessage('This invitation link has expired (10-minute validity exceeded).');
+          setErrorMessage('This invitation link has expired (15-minute validity exceeded).');
           return 0;
         }
         return prev - 1;
@@ -310,13 +432,101 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     }
   };
 
-  // PENDING VERIFICATION SCREEN
+  // PENDING & APPROVED VERIFICATION SCREEN
   if (isPendingSubmitted) {
+    if (isApprovedSuccess) {
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center bg-[#05070f] text-white p-4 sm:p-6 font-sans relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px]" />
+          
+          <div className="max-w-md w-full bg-[#0b1329]/95 border border-emerald-500/50 rounded-3xl p-8 text-center space-y-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden animate-fade-in z-10">
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-lime-400 to-green-500" />
+            
+            {/* Real Logo */}
+            <div className="flex flex-col items-center justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-900/90 p-1 border border-emerald-500/40 shadow-xl flex items-center justify-center mb-3">
+                <img
+                  src="/code_flow_logo.jpg"
+                  alt="Code Flow Logo"
+                  className="w-full h-full object-contain rounded-xl"
+                />
+              </div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-1.5">
+                Code Flow <span className="text-emerald-400 font-extrabold">SMS</span>
+              </h1>
+            </div>
+
+            {/* Animated Celebration Icon */}
+            <div className="w-20 h-20 rounded-3xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-950/50 relative">
+              <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 animate-ping" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 text-xs font-black uppercase tracking-wider shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                STATUS: APPROVED & ACTIVATED
+              </div>
+              <h2 className="text-2xl font-black text-white tracking-tight">
+                Account Approved! 🎉
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-300 font-semibold leading-relaxed">
+                অভিনন্দন! এডমিন আপনার অ্যাকাউন্টটি অনুমোদন ও একটিভ করেছেন।
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 text-left text-xs space-y-2.5 shadow-inner">
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Account Name:</span>
+                <span className="font-bold text-white">{registeredName || invitation?.name || 'User'}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Email:</span>
+                <span className="font-mono font-bold text-cyan-300">{registeredEmail || invitation?.email}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Account Status:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-black tracking-wider">
+                  ACTIVE
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onGoToLogin}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-lime-950/80 active:scale-[0.99]"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>লগইন প্যানেলে প্রবেশ করুন (Sign In Now)</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#060911] text-white p-4 sm:p-6 font-sans">
-        <div className="max-w-md w-full bg-slate-900/95 border border-amber-500/40 rounded-3xl p-8 text-center space-y-5 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#05070f] text-white p-4 sm:p-6 font-sans relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px]" />
+        
+        <div className="max-w-md w-full bg-[#0b1329]/95 border border-amber-500/40 rounded-3xl p-8 text-center space-y-5 shadow-2xl backdrop-blur-2xl relative overflow-hidden z-10">
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600" />
           
+          {/* Real Logo */}
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900/90 p-1 border border-slate-800 shadow-xl flex items-center justify-center mb-2">
+              <img
+                src="/code_flow_logo.jpg"
+                alt="Code Flow Logo"
+                className="w-full h-full object-contain rounded-xl"
+              />
+            </div>
+            <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-1.5">
+              Code Flow <span className="text-amber-400 font-extrabold">SMS</span>
+            </h1>
+          </div>
+
           {/* Animated Hourglass / Clock Icon */}
           <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-inner relative">
             <Clock className="w-8 h-8 animate-pulse" />
@@ -326,13 +536,13 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-600/50 text-amber-300 text-xs font-black uppercase tracking-wider">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              STATUS: PENDING
+              STATUS: PENDING APPROVAL
             </div>
             <h2 className="text-2xl font-black text-white tracking-tight">
               Registration Complete!
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              আপনার সকল তথ্য এবং অ্যাকাউন্ট তৈরির প্রক্রিয়া সফলভাবে সম্পন্ন হয়েছে। আপনার অ্যাকাউন্টটি বর্তমানে <strong className="text-amber-300">Pending (অপেক্ষারত)</strong> অবস্থায় রয়েছে।
+              আপনার সকল তথ্য এবং অ্যাকাউন্ট তৈরির প্রক্রিয়া সফলভাবে সম্পন্ন হয়েছে। আপনার অ্যাকাউন্টটি বর্তমানে <strong className="text-amber-300">Pending (অনুমোদনের অপেক্ষায়)</strong> রয়েছে।
             </p>
           </div>
 
@@ -347,27 +557,24 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
             </div>
             <div className="flex items-center justify-between text-slate-400">
               <span>Approval Status:</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-black tracking-wider">
-                PENDING APPROVAL
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-black tracking-wider flex items-center gap-1">
+                <Clock className="w-3 h-3 animate-spin" />
+                <span>WAITING FOR ADMIN</span>
               </span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400">
-              <span>Next Step:</span>
-              <span className="text-slate-300 font-medium">Admin verification</span>
             </div>
           </div>
 
           <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 text-[11px] text-amber-200/90 text-left leading-relaxed">
-            এডমিন আপনার অ্যাকাউন্টটি রিভিউ করে অনুমোদন (Approve) করলে আপনি সরাসরি আপনার ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করতে পারবেন।
+            এডমিন আপনার অ্যাকাউন্টটি অনুমোদন (Approve) করার সাথে সাথে এই স্ক্রিনটি স্বয়ংক্রিয়ভাবে সক্রিয় হয়ে যাবে।
           </div>
 
           <button
             type="button"
             onClick={onGoToLogin}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-950/40"
+            className="w-full py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
           >
-            <span>Go to Login Page</span>
-            <ChevronRight className="w-4 h-4 text-slate-950" />
+            <span>Return to Sign In</span>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
         </div>
       </div>
@@ -377,65 +584,62 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
   // Loading Screen
   if (loading) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#090d16] text-white p-4">
-        <div className="text-center space-y-3">
-          <div className="w-12 h-12 border-3 border-lime-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-bold text-slate-300">Verifying secure invitation link...</p>
-          <p className="text-xs text-slate-500">Checking 10-minute token validity</p>
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#05070f] text-white p-4 font-sans">
+        <div className="text-center space-y-4 max-w-sm w-full p-8 bg-[#0b1329] border border-slate-800 rounded-3xl shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-slate-900 p-1 border border-slate-800 shadow-xl flex items-center justify-center mx-auto mb-2">
+            <img
+              src="/code_flow_logo.jpg"
+              alt="Code Flow Logo"
+              className="w-full h-full object-contain rounded-xl"
+            />
+          </div>
+          <div className="w-10 h-10 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-bold text-slate-200">Verifying VIP Invitation Link...</p>
+          <p className="text-xs text-slate-400">Checking 15-minute token authorization</p>
         </div>
       </div>
     );
   }
 
-  // EXPIRED STATE
+  // EXPIRED STATE - Clean Full-Screen Design
   if (isExpired || !invitation) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#060911] text-white p-4 sm:p-6 font-sans">
-        <div className="max-w-md w-full bg-slate-900/90 border border-red-500/30 rounded-3xl p-8 text-center space-y-5 shadow-2xl backdrop-blur-xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 to-rose-600" />
-          
-          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto shadow-inner">
-            <Clock className="w-8 h-8 stroke-[2]" />
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#05070f] text-white p-6 font-sans relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(#ef4444_1px,transparent_1px)] [background-size:24px_24px]" />
+
+        <div className="max-w-md w-full bg-[#0b1329] border border-red-500/30 rounded-3xl p-8 text-center space-y-6 z-10 shadow-2xl backdrop-blur-2xl animate-fade-in">
+          {/* Logo */}
+          <div className="w-16 h-16 rounded-2xl bg-slate-900 p-1 border border-slate-800 shadow-xl flex items-center justify-center mx-auto mb-1">
+            <img
+              src="/code_flow_logo.jpg"
+              alt="Code Flow Logo"
+              className="w-full h-full object-contain rounded-xl"
+            />
+          </div>
+
+          <div className="w-16 h-16 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto shadow-2xl border border-red-500/30">
+            <XCircle className="w-8 h-8 stroke-[2.5]" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xl font-black text-white">
-              Invitation Link Expired
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              {errorMessage || 'For strict security reasons, personalized onboarding links expire exactly 10 minutes after generation.'}
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">
+              LINK EXPIRED
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed font-medium">
+              This personalized invitation link has expired or has already been used. Please contact support or request a new invitation link from your admin.
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-left text-xs space-y-2">
-            <div className="flex items-center justify-between text-slate-400">
-              <span>Target Account:</span>
-              <span className="font-mono font-bold text-slate-200">{invitation?.email || 'N/A'}</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400">
-              <span>Validity Limit:</span>
-              <span className="font-bold text-rose-400">10 Minutes (Elapsed)</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400">
-              <span>Status:</span>
-              <span className="px-2 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-800 text-[10px] font-extrabold">
-                EXPIRED
-              </span>
-            </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={onGoToLogin}
+              className="w-full py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:text-white"
+            >
+              <span>Return to Sign In</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-
-          <p className="text-xs text-slate-500">
-            Please ask the administrator or support to generate a fresh invitation link for your email address.
-          </p>
-
-          <button
-            type="button"
-            onClick={onGoToLogin}
-            className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
-          >
-            <span>Return to Sign In</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
         </div>
       </div>
     );
@@ -443,80 +647,103 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
 
   // ACTIVE 4-STEP ONBOARDING
   const stepTitles = [
-    { num: 1, label: 'ABOUT YOU', icon: User },
-    { num: 2, label: 'LOCATION', icon: MapPin },
-    { num: 3, label: 'CONTACT', icon: Phone },
-    { num: 4, label: 'SECURITY', icon: Lock },
+    { num: 1, label: 'Profile', subtitle: 'Personal Details', icon: User },
+    { num: 2, label: 'Location', subtitle: 'Region & Timezone', icon: MapPin },
+    { num: 3, label: 'Contact', subtitle: 'Phone & Telegram', icon: Phone },
+    { num: 4, label: 'Security', subtitle: 'Password & PIN', icon: Lock },
   ];
 
   return (
-    <div className="min-h-screen w-full bg-[#060913] text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6 font-sans relative overflow-x-hidden">
+    <div className="min-h-screen w-full bg-[#05070f] text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6 font-sans relative overflow-x-hidden">
       
-      {/* Background Ambience */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-96 bg-lime-500/10 blur-[120px] pointer-events-none rounded-full" />
-      <div className="absolute bottom-0 right-0 w-80 h-80 bg-cyan-500/5 blur-[100px] pointer-events-none rounded-full" />
+      {/* Background Ambience Elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div 
+          className="absolute inset-0 opacity-[0.03]" 
+          style={{
+            backgroundImage: `radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)`,
+            backgroundSize: '32px 32px'
+          }}
+        />
+        <div className="absolute top-1/4 -left-48 w-96 h-96 bg-indigo-500/15 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-slate-900/40 rounded-full blur-[120px]" />
+      </div>
 
-      {/* Outer Card Container */}
-      <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-xl relative overflow-hidden my-4 z-10">
+      {/* Main Form Container */}
+      <div className="w-full max-w-xl bg-[#0b1329]/95 border border-slate-800/90 rounded-3xl shadow-2xl backdrop-blur-2xl relative overflow-hidden my-4 z-10">
         
-        {/* Top Accent Gradient Bar */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#65a30d] via-lime-400 to-emerald-500" />
-
-        {/* 10-Minute Expiration Banner */}
-        <div className="bg-slate-950/90 px-4 py-2.5 border-b border-slate-800/80 flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span className="text-slate-400 text-[11px] truncate">
-              Link exclusive to <strong className="text-slate-200 font-mono">{invitation.email}</strong>
-            </span>
-          </div>
-          <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono font-black text-xs">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{formatCountdown(secondsRemaining)}</span>
-          </div>
-        </div>
+        {/* Animated Rainbow Border Line */}
+        <div className="w-full h-[3.5px] rainbow-animated-border shrink-0 shadow-md" />
 
         {/* Brand Header */}
-        <div className="p-6 pb-4 text-center space-y-2 border-b border-slate-800/60">
-          <div className="flex items-center justify-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#65a30d] to-[#4d7c0f] text-white flex items-center justify-center font-black text-lg shadow-md shadow-lime-950">
-              T
+        <div className="p-6 pb-5 text-center space-y-3 border-b border-slate-800/80">
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900/90 p-1 border border-slate-800 shadow-xl flex items-center justify-center mb-2.5 transform hover:scale-105 transition-transform duration-300">
+              <img
+                src="/code_flow_logo.jpg"
+                alt="Code Flow Logo"
+                className="w-full h-full object-contain rounded-xl"
+              />
             </div>
-            <h1 className="text-lg font-black text-white tracking-wide">
-              Welcome to Traffic Analytics
+            
+            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-1.5 justify-center">
+              Code Flow <span className="text-cyan-400 font-extrabold">SMS</span>
             </h1>
+            <p className="text-[10px] font-extrabold tracking-[0.2em] text-slate-500 uppercase mt-0.5">
+              VIP CLIENT REGISTRATION PORTAL
+            </p>
           </div>
-          
-          <p className="text-[11px] font-bold tracking-wider uppercase text-slate-400">
-            STEP {currentStep} OF 4 &bull; {stepTitles[currentStep - 1].label} &bull; INVITED BY {invitation.inviter.toUpperCase()}
-          </p>
+
+          {/* Invitation Info Pill Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-slate-400">Invited:</span>
+              <span className="font-mono font-bold text-emerald-300 truncate max-w-[180px] sm:max-w-[220px]">
+                {invitation.email}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-cyan-950 border border-cyan-800 text-[10px] font-black text-cyan-300">
+                ${invitation.balance?.toFixed(2) || '50.00'} BONUS
+              </span>
+
+              {/* Real-time Countdown Timer */}
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-amber-950/80 border border-amber-800/60 text-amber-300 font-mono text-[11px] font-black">
+                <Clock className="w-3 h-3" />
+                <span>{formatCountdown(secondsRemaining)}</span>
+              </div>
+            </div>
+          </div>
 
           {/* Stepper Navigation Pills */}
-          <div className="grid grid-cols-4 gap-1.5 pt-3">
+          <div className="grid grid-cols-4 gap-1.5 pt-1">
             {stepTitles.map((step) => {
               const isCompleted = step.num < currentStep;
               const isCurrent = step.num === currentStep;
+              const StepIcon = step.icon;
               return (
                 <div
                   key={step.num}
-                  className={`py-2 px-1 rounded-xl text-center transition-all ${
+                  className={`py-2 px-1.5 rounded-xl text-center transition-all ${
                     isCurrent
-                      ? 'bg-slate-800 border-b-2 border-lime-400 text-white font-black'
+                      ? 'bg-slate-800/90 border-b-2 border-cyan-400 text-white font-black shadow-md'
                       : isCompleted
-                      ? 'bg-slate-950/60 text-lime-400 font-bold'
+                      ? 'bg-slate-950/70 text-emerald-400 font-bold border border-emerald-900/30'
                       : 'bg-slate-950/40 text-slate-500 font-medium'
                   }`}
                 >
-                  <div className="flex items-center justify-center gap-1 text-[10px] uppercase">
-                    {isCompleted ? (
-                      <CheckCircle2 className="w-3 h-3 text-lime-400" />
-                    ) : (
-                      <span>{step.num}.</span>
-                    )}
-                    <span className="truncate hidden sm:inline">{step.label}</span>
+                  <div className="flex flex-col items-center justify-center gap-0.5">
+                    <div className="flex items-center gap-1 text-[11px]">
+                      {isCompleted ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <StepIcon className={`w-3.5 h-3.5 ${isCurrent ? 'text-cyan-400' : 'text-slate-500'}`} />
+                      )}
+                      <span className="font-bold">{step.label}</span>
+                    </div>
                   </div>
                 </div>
               );
@@ -536,11 +763,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         {currentStep === 1 && (
           <form onSubmit={handleStep1Submit} className="p-6 space-y-5">
             <div className="space-y-1">
-              <h2 className="text-base sm:text-lg font-black text-white">
-                A bit about you
+              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <User className="w-5 h-5 text-cyan-400" />
+                <span>Step 1: Account Information</span>
               </h2>
               <p className="text-xs text-slate-400">
-                We use this on your profile and on the invoices we generate for you.
+                Please enter your personal details to personalize your Code Flow account profile.
               </p>
             </div>
 
@@ -548,61 +776,87 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300">
-                    FIRST NAME <span className="text-lime-400">*</span>
+                    FIRST NAME <span className="text-cyan-400">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="First Name"
-                    required
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Enter your first name"
+                      required
+                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300">
-                    LAST NAME
+                    LAST NAME <span className="text-cyan-400">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Last Name"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Enter your last name"
+                      required
+                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  BIRTH DATE
+                  DATE OF BIRTH (OPTIONAL)
                 </label>
                 <div className="relative">
+                  <Calendar className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="date"
                     value={birthDate}
                     onChange={(e) => setBirthDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
                   />
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Used for age-verification on payouts.
-                </p>
+              </div>
+
+              {/* Invited Email (Readonly) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <span>AUTHORIZED EMAIL ADDRESS</span>
+                  <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Verified</span>
+                  </span>
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    value={invitation.email}
+                    disabled
+                    readOnly
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/60 border border-emerald-500/40 text-emerald-300 font-mono rounded-xl text-xs font-bold cursor-not-allowed"
+                  />
+                </div>
               </div>
             </div>
 
             {/* Bottom Actions */}
             <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-3">
               <span className="text-xs font-mono text-slate-500">
-                &bull; 1 / 4
+                Step 1 of 4
               </span>
 
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs shadow-lg shadow-lime-950 flex items-center gap-2 cursor-pointer transition"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 cursor-pointer transition"
               >
-                <span>Continue</span>
+                <span>Continue to Location</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -613,7 +867,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                 onClick={onGoToLogin}
                 className="text-xs text-slate-400 hover:text-white transition cursor-pointer"
               >
-                Already onboarded? <strong className="text-lime-400 underline">Sign in</strong>
+                Already have an account? <strong className="text-cyan-400 underline">Sign in</strong>
               </button>
             </div>
           </form>
@@ -623,60 +877,166 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         {currentStep === 2 && (
           <form onSubmit={handleStep2Submit} className="p-6 space-y-5">
             <div className="space-y-1">
-              <h2 className="text-base sm:text-lg font-black text-white">
-                Where you are
+              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-cyan-400" />
+                <span>Step 2: Location & Region</span>
               </h2>
               <p className="text-xs text-slate-400">
-                Your country sets the default currency and matches reports to your timezone.
+                Select your country and regional settings for optimized IPRN routing.
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
-                  COUNTRY
+              {/* Interactive Searchable Country Selector */}
+              <div className="space-y-1.5 relative">
+                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <span>SELECT COUNTRY / REGION <span className="text-cyan-400">*</span></span>
+                  <span className="text-[10px] text-cyan-400 font-medium">Asia Continent Suggested</span>
                 </label>
-                <select
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
+
+                <button
+                  type="button"
+                  onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                  className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs font-semibold text-white flex items-center justify-between transition cursor-pointer"
                 >
-                  <option value="Bangladesh">🇧🇩 Bangladesh</option>
-                  <option value="United States">🇺🇸 United States</option>
-                  <option value="United Kingdom">🇬🇧 United Kingdom</option>
-                  <option value="Canada">🇨🇦 Canada</option>
-                  <option value="United Arab Emirates">🇦🇪 United Arab Emirates</option>
-                  <option value="Germany">🇩🇪 Germany</option>
-                  <option value="India">🇮🇳 India</option>
-                  <option value="Pakistan">🇵🇰 Pakistan</option>
-                  <option value="Other">🌍 Other</option>
-                </select>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const found = ALL_COUNTRIES.find((c) => c.name.toLowerCase() === country.toLowerCase());
+                      return found ? (
+                        <>
+                          <span className="text-base">{found.flag}</span>
+                          <span>{found.name} ({found.areaCode})</span>
+                        </>
+                      ) : (
+                        <span>{country}</span>
+                      );
+                    })()}
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${isCountryDropdownOpen ? 'rotate-90' : ''}`} />
+                </button>
+
+                {isCountryDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-64 flex flex-col animate-fade-in">
+                    <div className="p-2 border-b border-slate-800/80 sticky top-0 bg-slate-900 z-10">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={countrySearch}
+                          onChange={(e) => setCountrySearch(e.target.value)}
+                          placeholder="Search country or dial code (e.g. Bangladesh, India, +91)..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <div className="overflow-y-auto p-1.5 space-y-1 divide-y divide-slate-800/40">
+                      {filteredCountries.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-slate-500">
+                          No country matched "{countrySearch}"
+                        </div>
+                      ) : (
+                        <>
+                          {filteredCountries.some(c => c.continent === 'Asia') && (
+                            <div className="pt-1 pb-1">
+                              <div className="px-2 py-1 text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+                                🌏 Asia Continent (Suggested)
+                              </div>
+                              {filteredCountries.filter(c => c.continent === 'Asia').map((c) => {
+                                const isSel = country.toLowerCase() === c.name.toLowerCase();
+                                return (
+                                  <button
+                                    key={c.code}
+                                    type="button"
+                                    onClick={() => {
+                                      setCountry(c.name);
+                                      setPhone(`${c.areaCode} `);
+                                      setIsCountryDropdownOpen(false);
+                                      setCountrySearch('');
+                                    }}
+                                    className={`w-full px-2.5 py-2 rounded-xl text-xs flex items-center justify-between cursor-pointer transition ${
+                                      isSel ? 'bg-cyan-500/10 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800 text-slate-200'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-base">{c.flag}</span>
+                                      <span>{c.name}</span>
+                                      <span className="text-[10px] text-slate-500 font-mono">{c.areaCode}</span>
+                                    </div>
+                                    {isSel && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {filteredCountries.some(c => c.continent === 'Global') && (
+                            <div className="pt-2 pb-1">
+                              <div className="px-2 py-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                                🌐 Global Countries
+                              </div>
+                              {filteredCountries.filter(c => c.continent === 'Global').map((c) => {
+                                const isSel = country.toLowerCase() === c.name.toLowerCase();
+                                return (
+                                  <button
+                                    key={c.code}
+                                    type="button"
+                                    onClick={() => {
+                                      setCountry(c.name);
+                                      setPhone(`${c.areaCode} `);
+                                      setIsCountryDropdownOpen(false);
+                                      setCountrySearch('');
+                                    }}
+                                    className={`w-full px-2.5 py-2 rounded-xl text-xs flex items-center justify-between cursor-pointer transition ${
+                                      isSel ? 'bg-cyan-500/10 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800 text-slate-200'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-base">{c.flag}</span>
+                                      <span>{c.name}</span>
+                                      <span className="text-[10px] text-slate-500 font-mono">{c.areaCode}</span>
+                                    </div>
+                                    {isSel && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  CITY
+                  CITY <span className="text-cyan-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="e.g. Khulna or Dhaka"
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Enter your city (e.g. Dhaka, Chittagong, Sylhet)"
+                    required
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  ADDRESS
+                  ADDRESS (OPTIONAL)
                 </label>
                 <input
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Vill / Road, Post Office / Area"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                  placeholder="Enter your street / area address"
+                  className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
                 />
               </div>
 
@@ -684,21 +1044,22 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                 <label className="text-xs font-bold text-slate-300">
                   TIME ZONE
                 </label>
-                <select
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
-                >
-                  <option value="Asia/Dhaka">Asia/Dhaka (GMT+6)</option>
-                  <option value="UTC">UTC (Universal Coordinated Time)</option>
-                  <option value="America/New_York">America/New_York (EST / EDT)</option>
-                  <option value="Europe/London">Europe/London (GMT / BST)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GST +4)</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
-                </select>
-                <p className="text-[11px] text-slate-500">
-                  Auto-detected from your browser — change if it's wrong. Dashboard timestamps render in this zone.
-                </p>
+                <div className="relative">
+                  <Globe className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
+                  >
+                    <option value="Asia/Dhaka">Asia/Dhaka (GMT+6)</option>
+                    <option value="UTC">UTC (Universal Coordinated Time)</option>
+                    <option value="America/New_York">America/New_York (EST / EDT)</option>
+                    <option value="Europe/London">Europe/London (GMT / BST)</option>
+                    <option value="Asia/Dubai">Asia/Dubai (GST +4)</option>
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
+                    <option value="Asia/Singapore">Asia/Singapore (SGT +8)</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -714,14 +1075,14 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               </button>
 
               <span className="text-xs font-mono text-slate-500">
-                &bull; 2 / 4
+                Step 2 of 4
               </span>
 
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs shadow-lg shadow-lime-950 flex items-center gap-2 cursor-pointer transition"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 cursor-pointer transition"
               >
-                <span>Continue</span>
+                <span>Continue to Contact</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -732,79 +1093,66 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         {currentStep === 3 && (
           <form onSubmit={handleStep3Submit} className="p-6 space-y-5">
             <div className="space-y-1">
-              <h2 className="text-base sm:text-lg font-black text-white">
-                How we reach you
+              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <Phone className="w-5 h-5 text-cyan-400" />
+                <span>Step 3: Contact & Alerts</span>
               </h2>
               <p className="text-xs text-slate-400">
-                Email is verified now — the others stay editable from your profile later.
+                Provide your WhatsApp/Phone and Telegram for instant OTP and report notifications.
               </p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  PHONE NUMBER <span className="text-lime-400">*</span>
+                  PHONE / WHATSAPP NUMBER <span className="text-cyan-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+880 1647-783682"
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+880 1647-783682"
+                    required
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  TELEGRAM
+                  TELEGRAM HANDLE (OPTIONAL)
                 </label>
-                <input
-                  type="text"
-                  value={telegram}
-                  onChange={(e) => setTelegram(e.target.value)}
-                  placeholder="@your_username"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                  <span>EMAIL (FROM YOUR INVITATION)</span>
-                  <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>Verified</span>
-                  </span>
-                </label>
-                <input
-                  type="email"
-                  value={invitation.email}
-                  disabled
-                  readOnly
-                  className="w-full px-3.5 py-2.5 bg-slate-950/60 border border-emerald-500/30 text-emerald-300 font-mono rounded-xl text-xs font-bold cursor-not-allowed"
-                />
-                <p className="text-[11px] text-slate-500">
-                  Locked to your invitation recipient. Cannot be changed.
-                </p>
+                <div className="relative">
+                  <Send className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={telegram}
+                    onChange={(e) => setTelegram(e.target.value)}
+                    placeholder="@your_telegram_handle"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  NOTIFICATION CHANNEL
+                  PREFERRED NOTIFICATION CHANNEL
                 </label>
-                <select
-                  value={notificationChannel}
-                  onChange={(e) => setNotificationChannel(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
-                >
-                  <option value="Email (Primary) & Telegram Alerts">Email (Primary) & Telegram Alerts</option>
-                  <option value="Email Only">Email Only</option>
-                  <option value="Telegram Alerts Only">Telegram Alerts Only</option>
-                  <option value="In-App Portal Only">In-App Portal Only</option>
-                </select>
-                <p className="text-[11px] text-slate-500">
-                  Where alerts, OTPs, and balance updates land.
-                </p>
+                <div className="relative">
+                  <Bell className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={notificationChannel}
+                    onChange={(e) => setNotificationChannel(e.target.value)}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white focus:outline-none"
+                  >
+                    <option value="Email (Primary) & Telegram Alerts">Email (Primary) & Telegram Alerts</option>
+                    <option value="Email Only">Email Only</option>
+                    <option value="Telegram Alerts Only">Telegram Alerts Only</option>
+                    <option value="In-App Portal Only">In-App Portal Only</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -820,14 +1168,14 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               </button>
 
               <span className="text-xs font-mono text-slate-500">
-                &bull; 3 / 4
+                Step 3 of 4
               </span>
 
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs shadow-lg shadow-lime-950 flex items-center gap-2 cursor-pointer transition"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 cursor-pointer transition"
               >
-                <span>Continue</span>
+                <span>Continue to Security</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -838,32 +1186,34 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         {currentStep === 4 && (
           <form onSubmit={handleFinalSubmit} className="p-6 space-y-5">
             <div className="space-y-1">
-              <h2 className="text-base sm:text-lg font-black text-white">
-                Set your security
+              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <Lock className="w-5 h-5 text-cyan-400" />
+                <span>Step 4: Security & Authentication</span>
               </h2>
               <p className="text-xs text-slate-400">
-                Create a secure password and quick PIN to protect your account.
+                Create a strong password and a 4-digit security PIN for your account.
               </p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  CREATE PASSWORD <span className="text-lime-400">*</span>
+                  CREATE ACCOUNT PASSWORD <span className="text-cyan-400">*</span>
                 </label>
                 <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="At least 6 characters"
                     required
-                    className="w-full pl-3.5 pr-10 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none font-mono"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -872,33 +1222,44 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  CONFIRM PASSWORD <span className="text-lime-400">*</span>
+                  CONFIRM PASSWORD <span className="text-cyan-400">*</span>
                 </label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-type your password"
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none font-mono"
-                />
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-type your password"
+                    required
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition cursor-pointer"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
-                  SECURITY PIN (4 DIGITS)
+                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <span>SECURITY PIN (4 DIGITS)</span>
+                  <span className="text-[10px] text-slate-400">For Fast Withdrawals / Changes</span>
                 </label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  value={securityPin}
-                  onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, ''))}
-                  placeholder="e.g. 1234"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-lime-500 focus:ring-1 focus:ring-lime-500 rounded-xl text-xs font-mono font-bold text-lime-400 placeholder-slate-500 focus:outline-none tracking-widest"
-                />
-                <p className="text-[11px] text-slate-500">
-                  Used for fast PIN confirmations on API requests and invoice approvals.
-                </p>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-cyan-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={securityPin}
+                    onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="e.g. 1234"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-mono font-bold text-cyan-300 placeholder-slate-500 focus:outline-none tracking-widest"
+                  />
+                </div>
               </div>
 
               <div className="pt-2">
@@ -907,10 +1268,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                     type="checkbox"
                     checked={agreedTerms}
                     onChange={(e) => setAgreedTerms(e.target.checked)}
-                    className="mt-0.5 rounded text-lime-500 focus:ring-lime-400 bg-slate-950 border-slate-800"
+                    className="mt-0.5 rounded text-cyan-500 focus:ring-cyan-400 bg-slate-950 border-slate-800"
                   />
                   <span>
-                    I agree to the <strong className="text-lime-400">Terms of Service</strong>, <strong className="text-lime-400">Privacy Policy</strong>, and standard IPRN traffic regulations.
+                    I agree to the <strong className="text-cyan-400">Terms of Service</strong>, <strong className="text-cyan-400">Privacy Policy</strong>, and standard IPRN telecom guidelines.
                   </span>
                 </label>
               </div>
@@ -930,10 +1291,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-xs shadow-lg shadow-lime-950 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>{isSubmitting ? 'Activating Account...' : 'Complete Setup & Launch Dashboard'}</span>
+                <span>{isSubmitting ? 'Creating Account...' : 'Complete Registration'}</span>
               </button>
             </div>
           </form>
@@ -943,8 +1304,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
 
       {/* Footer Info */}
       <div className="text-center space-y-1 text-slate-500 text-xs">
-        <p>Traffic Analytics &bull; Secure 10-Minute Invitation Gateway</p>
-        <p className="text-[11px]">Protected by End-to-End Encryption & Brevo Relay</p>
+        <p>&copy; {new Date().getFullYear()} Code Flow SMS Platform. All rights reserved.</p>
       </div>
     </div>
   );

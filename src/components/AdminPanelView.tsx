@@ -134,6 +134,27 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   onBackToUserPanel,
   darkMode,
 }) => {
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+  const isAdminUser = currentLoggedUser === 'xzrmunna7788@gmail.com' || currentLoggedUser === 'xzrmunna7788';
+
+  if (!isAdminUser) {
+    return (
+      <div className="p-8 max-w-lg mx-auto bg-red-950/20 border border-red-500/30 rounded-2xl text-center shadow-2xl my-12 animate-fade-in">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4 animate-bounce" />
+        <h2 className="text-xl font-black text-red-400 mb-2">403 Access Denied</h2>
+        <p className="text-sm text-slate-300 mb-6 font-medium">
+          Unauthorized Administrator Access Blocked. Secure access privileges are required to view this panel.
+        </p>
+        <button
+          onClick={onBackToUserPanel}
+          className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition cursor-pointer shadow-lg"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   const [activeSection, setActiveSection] = useState<
     | 'overview'
     | 'users'
@@ -174,7 +195,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [configSecure, setConfigSecure] = useState<boolean>(false);
   const [configUser, setConfigUser] = useState<string>('b969f4001@smtp-brevo.com');
   const [configPass, setConfigPass] = useState<string>('');
-  const [configFrom, setConfigFrom] = useState<string>('"Traffic Analytics" <b969f4001@smtp-brevo.com>');
+  const [configFrom, setConfigFrom] = useState<string>('"CodeFlow SMS" <b969f4001@smtp-brevo.com>');
   const [configProvider, setConfigProvider] = useState<string>('Brevo SMTP Relay');
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
 
@@ -303,45 +324,111 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // 2. Pending Activations Queue
+  // 2. Pending Activations Queue (Clean Real-Time Queue)
   const [pendingActivations, setPendingActivations] = useState<AdminUserRecord[]>(() => {
-    const saved = localStorage.getItem('codeflow_pending_activations');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'PEND-301',
-        name: 'Rahim Telecom',
-        email: 'rahim.sms@gmail.com',
-        pass: 'RahimPass78#',
-        role: 'User',
-        balance: 10.0,
-        status: 'Pending',
-        assignedNumbers: 0,
-        ipAddress: '103.205.71.18',
-        location: 'Chittagong, Bangladesh',
-        device: 'Windows 10 / Edge',
-        isOnline: true,
-        lastActive: 'Awaiting Activation',
-        activatedAt: new Date().toISOString(),
-      },
-      {
-        id: 'PEND-302',
-        name: 'Nexus OTP System',
-        email: 'nexus.verify@cloudmail.net',
-        pass: 'NexusSecure88$',
-        role: 'User',
-        balance: 10.0,
-        status: 'Pending',
-        assignedNumbers: 0,
-        ipAddress: '45.33.32.156',
-        location: 'California, US',
-        device: 'MacOS / Chrome',
-        isOnline: false,
-        lastActive: '1 hr ago',
-        activatedAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-    ];
+    try {
+      const saved = localStorage.getItem('codeflow_pending_activations');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
+
+  // Real-Time Server Synchronization Hook
+  useEffect(() => {
+    // 1. Fetch live pending users
+    fetch('/api/pending-users')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.pending)) {
+          const mapped: AdminUserRecord[] = data.pending.map((p: any) => ({
+            id: p.id || `PEND-${Math.floor(100 + Math.random() * 900)}`,
+            name: p.name || p.email.split('@')[0],
+            email: p.email,
+            pass: p.pass || '••••••••',
+            role: p.role || 'User',
+            balance: p.balance || 0,
+            status: 'Pending',
+            assignedNumbers: 0,
+            ipAddress: p.ipAddress || '103.205.71.18',
+            location: p.location || 'Dhaka, Bangladesh',
+            device: 'Mobile / Browser',
+            isOnline: true,
+            lastActive: 'Awaiting Activation',
+            activatedAt: p.registeredAt || new Date().toISOString(),
+          }));
+          setPendingActivations(mapped);
+          localStorage.setItem('codeflow_pending_activations', JSON.stringify(mapped));
+        }
+      })
+      .catch((e) => console.warn('[Admin] Pending users sync notice:', e));
+
+    // 2. Fetch all registered users
+    fetch('/api/all-registered-users')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.users)) {
+          const activeServerUsers: AdminUserRecord[] = data.users
+            .filter((u: any) => u.status === 'Active')
+            .map((u: any) => ({
+              id: u.id || `USR-${Math.floor(100 + Math.random() * 900)}`,
+              name: u.name || u.email.split('@')[0],
+              email: u.email,
+              pass: u.pass || '••••••••',
+              role: u.role || 'User',
+              balance: typeof u.balance === 'number' ? u.balance : 50.0,
+              status: 'Active',
+              assignedNumbers: 1,
+              ipAddress: '103.205.71.18',
+              location: 'Dhaka, Bangladesh',
+              device: 'Desktop',
+              isOnline: true,
+              lastActive: 'Active now',
+              activatedAt: u.approvedAt || u.registeredAt || new Date().toISOString(),
+            }));
+
+          if (activeServerUsers.length > 0) {
+            setUsers((prev) => {
+              const existingEmails = new Set(prev.map((usr) => usr.email.toLowerCase()));
+              const newToAdd = activeServerUsers.filter((u) => !existingEmails.has(u.email.toLowerCase()));
+              return [...newToAdd, ...prev];
+            });
+          }
+        }
+      })
+      .catch((e) => console.warn('[Admin] Registered users sync notice:', e));
+
+    // 3. Listen to real-time WebSocket events for user updates
+    const handleUsersUpdated = (e: any) => {
+      const detail = e.detail;
+      if (detail?.users && Array.isArray(detail.users)) {
+        const pendingList = detail.users.filter((u: any) => u.status === 'Pending');
+        const mappedPending: AdminUserRecord[] = pendingList.map((p: any) => ({
+          id: p.id || `PEND-${Math.floor(100 + Math.random() * 900)}`,
+          name: p.name || p.email.split('@')[0],
+          email: p.email,
+          pass: p.pass || '••••••••',
+          role: p.role || 'User',
+          balance: p.balance || 0,
+          status: 'Pending',
+          assignedNumbers: 0,
+          ipAddress: p.ipAddress || '103.205.71.18',
+          location: p.location || 'Dhaka, Bangladesh',
+          device: 'Mobile / Browser',
+          isOnline: true,
+          lastActive: 'Awaiting Activation',
+          activatedAt: p.registeredAt || new Date().toISOString(),
+        }));
+        setPendingActivations(mappedPending);
+        localStorage.setItem('codeflow_pending_activations', JSON.stringify(mappedPending));
+      }
+    };
+
+    window.addEventListener('codeflow_users_updated', handleUsersUpdated as EventListener);
+    return () => {
+      window.removeEventListener('codeflow_users_updated', handleUsersUpdated as EventListener);
+    };
+  }, []);
 
   // 3. Sub-Admins List
   const [subAdmins, setSubAdmins] = useState<SubAdminRecord[]>(() => {
@@ -511,7 +598,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const suspendedUsersCount = users.filter((u) => u.status === 'Suspended').length;
   const bannedUsersCount = users.filter((u) => u.status === 'Banned').length;
 
-  // Actions on Users
+  // Actions on Users (Permanent Server & Firestore Approval)
   const handleApprovePendingUser = (user: AdminUserRecord) => {
     setPendingActivations((prev) => prev.filter((u) => u.id !== user.id));
     const approvedUser: AdminUserRecord = {
@@ -521,23 +608,53 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       lastActive: 'Active now',
       activatedAt: new Date().toISOString(),
     };
-    setUsers((prev) => [approvedUser, ...prev]);
+    setUsers((prev) => [approvedUser, ...prev.filter((u) => u.email.toLowerCase() !== user.email.toLowerCase())]);
 
-    // Update global registered users for login
+    // Update global registered users for local storage fallback
     const regStr = localStorage.getItem('codeflow_registered_users');
     const regList: RegisteredUser[] = regStr ? JSON.parse(regStr) : [];
-    regList.push({
-      name: user.name,
-      email: user.email,
-      pass: user.pass,
-      activatedAt: new Date().toISOString(),
-    });
-    localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
+    if (!regList.some((r) => r.email.toLowerCase() === user.email.toLowerCase())) {
+      regList.push({
+        name: user.name,
+        email: user.email,
+        pass: user.pass,
+        activatedAt: new Date().toISOString(),
+      });
+      localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
+    }
+
+    // Call server endpoint to permanently save approval in registered_users.json and Firestore!
+    fetch('/api/approve-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: user.email, id: user.id }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('[Admin] User approval saved on server:', data.message);
+        }
+      })
+      .catch((e) => console.error('[Admin] Approve user API error:', e));
+
     showToast(`Account Approved & Activated for ${user.email}!`);
   };
 
   const handleRejectPendingUser = (id: string, email: string) => {
-    setPendingActivations((prev) => prev.filter((u) => u.id !== id));
+    setPendingActivations((prev) => prev.filter((u) => u.id !== id && u.email.toLowerCase() !== email.toLowerCase()));
+    fetch('/api/reject-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, id }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('[Admin] User rejection saved on server:', data.message);
+        }
+      })
+      .catch((e) => console.error('[Admin] Reject user API error:', e));
+
     showToast(`Rejected activation for ${email}`);
   };
 
@@ -881,14 +998,28 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    setBroadcasts((prev) => [
+    const updatedList = [
       newBroadcast,
-      ...prev.map((b) => (updateActive ? { ...b, active: false } : b)),
-    ]);
-
-    // Clear dismissed notice so all users see this notice bar on their dashboard!
+      ...broadcasts.map((b) => (updateActive ? { ...b, active: false } : b)),
+    ];
+    setBroadcasts(updatedList);
     localStorage.removeItem('codeflow_dismissed_notice_id');
+    localStorage.setItem('codeflow_broadcasts', JSON.stringify(updatedList));
     window.dispatchEvent(new Event('codeflow_broadcasts_updated'));
+
+    // Call server API to permanently persist notice on server & Firestore and broadcast real-time
+    fetch('/api/broadcasts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notice: newBroadcast }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.broadcasts)) {
+          setBroadcasts(data.broadcasts);
+        }
+      })
+      .catch((err) => console.error('[Admin] Broadcast API error:', err));
 
     setUpdateTitle('');
     setUpdateMessage('');
@@ -907,17 +1038,29 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   };
 
   const handleToggleBroadcastStatus = (id: string) => {
-    setBroadcasts((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, active: !b.active } : b))
-    );
+    const updated = broadcasts.map((b) => (b.id === id ? { ...b, active: !b.active } : b));
+    setBroadcasts(updated);
     localStorage.removeItem('codeflow_dismissed_notice_id');
+    localStorage.setItem('codeflow_broadcasts', JSON.stringify(updated));
     window.dispatchEvent(new Event('codeflow_broadcasts_updated'));
+
+    fetch('/api/broadcasts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ broadcasts: updated }),
+    }).catch((e) => console.error('[Admin] Toggle notice error:', e));
+
     showToast('Notice Bar live status toggled.');
   };
 
   const handleDeleteBroadcast = (id: string) => {
-    setBroadcasts((prev) => prev.filter((b) => b.id !== id));
+    const updated = broadcasts.filter((b) => b.id !== id);
+    setBroadcasts(updated);
+    localStorage.setItem('codeflow_broadcasts', JSON.stringify(updated));
     window.dispatchEvent(new Event('codeflow_broadcasts_updated'));
+
+    fetch(`/api/broadcasts/${id}`, { method: 'DELETE' }).catch((e) => console.error('[Admin] Delete notice error:', e));
+
     showToast('Notice removed.');
   };
 
@@ -1185,7 +1328,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               <h3 style="color: #0f172a; margin-top: 0;">${smtpCustomSubject}</h3>
               <p style="color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-line;">${smtpCustomMessage}</p>
               <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-              <p style="color: #64748b; font-size: 11px;">Sent from Traffic Analytics Admin Gateway via Brevo SMTP</p>
+              <p style="color: #64748b; font-size: 11px;">Sent from CodeFlow SMS Admin Gateway via Brevo SMTP</p>
             </div>
           `,
         }),
@@ -2134,7 +2277,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <span>{smtpServerConfig?.provider || 'Brevo SMTP Relay'} & Email Gateway</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Production transactional email delivery gateway for user activations, OTPs, password resets, and 10-minute onboarding invitations.
+                  Production transactional email delivery gateway for user activations, OTPs, password resets, and 5-minute onboarding invitations.
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
@@ -2399,7 +2542,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
                   Auto-Welcome Integration
                 </p>
-                <p>When you create an account in Manual Create or send 10-minute onboarding invitations, transactional emails are automatically routed through this relay.</p>
+                <p>When you create an account in Manual Create or send 5-minute onboarding invitations, transactional emails are automatically routed through this relay.</p>
               </div>
             </div>
 
@@ -3148,7 +3291,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     setConfigPort('587');
                     setConfigSecure(false);
                     setConfigUser('b969f4001@smtp-brevo.com');
-                    setConfigFrom('"Traffic Analytics" <b969f4001@smtp-brevo.com>');
+                    setConfigFrom('"CodeFlow SMS" <b969f4001@smtp-brevo.com>');
                     setConfigProvider('Brevo SMTP Relay');
                   }}
                   className={`p-2 rounded-xl border text-xs font-bold transition cursor-pointer text-center ${
@@ -3297,7 +3440,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   required
                   value={configFrom}
                   onChange={(e) => setConfigFrom(e.target.value)}
-                  placeholder='"Traffic Analytics" <b969f4001@smtp-brevo.com>'
+                  placeholder='"CodeFlow SMS" <b969f4001@smtp-brevo.com>'
                   className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
                 />
               </div>

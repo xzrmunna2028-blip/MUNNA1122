@@ -13,6 +13,16 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
   
+  // Security Hardening: Disable Server Signature & Set Protection Headers
+  app.disable('x-powered-by');
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
   app.use(express.json({
     verify: (req: any, res, buf) => {
       req.rawBody = buf;
@@ -502,7 +512,7 @@ async function startServer() {
       rangeName: t.rangeName,
       term: t.rangeName,
       range: t.rangeName,
-      number: t.number || '',
+      number: t.number || (Array.isArray(t.numbersPool) && t.numbersPool.length > 0 ? t.numbersPool[0] : (t.sampleNumber || '')),
       country: t.country,
       operator: t.operator,
       cost: t.rate,
@@ -1163,7 +1173,7 @@ function getCountryByPhoneNumber(phone: string): string {
   return 'Global Route';
 }
 
-  // Direct, highly efficient, real-time FOX SMS & BLUE SMS API poller
+  // Direct, highly efficient, real-time FOX SMS, BLUE SMS, & S1T SMS API poller
   let nextAllowedPollTime = 0;
   let isPollingMessages = false;
 
@@ -1179,9 +1189,12 @@ function getCountryByPhoneNumber(phone: string): string {
 
     const blueToken = 'simple_v2_sZz2-nnAHU1gtNxq2dO1-zg6VNUjBEkOM8YRiohOsvjijAdR';
     const blueUrl = `https://agent-api.blue-sms.net/v2/cdr?token=${blueToken}&records=1000`;
+
+    const s1tToken = 'gIBhSFlycFVcj5lCRVKEgF-Vb4hEcGBGaneFQ0KRgn0=';
+    const s1tUrl = `http://147.135.212.197/crapi/s1t/viewstats?token=${s1tToken}&records=1000`;
     
     try {
-      const [foxRes, blueRes] = await Promise.allSettled([
+      const [foxRes, blueRes, s1tRes] = await Promise.allSettled([
         fetch(foxUrl, {
           method: 'GET',
           headers: {
@@ -1197,110 +1210,178 @@ function getCountryByPhoneNumber(phone: string): string {
             'Content-Type': 'application/json',
             'User-Agent': 'BLUE-SMS-RealTime/1.0'
           }
+        }),
+        fetch(s1tUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'S1T-SMS-RealTime/1.0'
+          }
         })
       ]);
       
       const now = new Date();
       let fetchedFoxLogs: any[] = [];
       let fetchedBlueLogs: any[] = [];
+      let fetchedS1tLogs: any[] = [];
 
       // Process FOX SMS
       if (foxRes.status === 'fulfilled' && foxRes.value.ok) {
         try {
-          const payload = await foxRes.value.json();
-          if (payload && payload.status === 'success' && Array.isArray(payload.data)) {
-            fetchedFoxLogs = payload.data.map((item: any) => {
-              let numStr = String(item.num || '');
-              if (numStr && !numStr.startsWith('+')) {
-                numStr = '+' + numStr;
-              }
-              const textBody = String(item.message || '');
-              let extractedOtp = '';
-              if (textBody) {
-                const match = textBody.match(/\b\d{4,8}\b/);
-                if (match) extractedOtp = match[0];
-              }
+          const rawText = await foxRes.value.text();
+          if (rawText && rawText.trim().startsWith('{')) {
+            const payload = JSON.parse(rawText);
+            if (payload && payload.status === 'success' && Array.isArray(payload.data)) {
+              fetchedFoxLogs = payload.data.map((item: any) => {
+                let numStr = String(item.num || '');
+                if (numStr && !numStr.startsWith('+')) {
+                  numStr = '+' + numStr;
+                }
+                const textBody = String(item.message || '');
+                let extractedOtp = '';
+                if (textBody) {
+                  const match = textBody.match(/\b\d{4,8}\b/);
+                  if (match) extractedOtp = match[0];
+                }
 
-              const timestampStr = item.dt || now.toISOString();
-              const deterministicId = crypto
-                .createHash('md5')
-                .update(`FOX_${numStr}_${item.cli || 'CLI'}_${textBody}_${timestampStr}`)
-                .digest('hex');
+                const timestampStr = item.dt || now.toISOString();
+                const deterministicId = crypto
+                  .createHash('md5')
+                  .update(`FOX_${numStr}_${item.cli || 'CLI'}_${textBody}_${timestampStr}`)
+                  .digest('hex');
 
-              const terminationName = getCountryByPhoneNumber(numStr);
+                const terminationName = getCountryByPhoneNumber(numStr);
 
-              return {
-                id: `MSG-FOX-${deterministicId}`,
-                number: numStr,
-                termination: terminationName,
-                sid: String(item.cli || 'AUTHMSG'),
-                status: 'DELIVERED',
-                text: textBody,
-                otp: extractedOtp,
-                timestamp: new Date(timestampStr).toISOString(),
-                cost: `${parseFloat(item.payout || 0.0096).toFixed(4)} USD`,
-                sender: String(item.cli || 'FOX-SMS')
-              };
-            });
+                return {
+                  id: `MSG-FOX-${deterministicId}`,
+                  number: numStr,
+                  termination: terminationName,
+                  sid: String(item.cli || 'AUTHMSG'),
+                  status: 'DELIVERED',
+                  text: textBody,
+                  otp: extractedOtp,
+                  timestamp: new Date(timestampStr).toISOString(),
+                  cost: `${parseFloat(item.payout || 0.0096).toFixed(4)} USD`,
+                  sender: String(item.cli || 'FOX-SMS')
+                };
+              });
+            }
+          } else {
+            console.warn('[FOX-SMS] API returned non-JSON string:', rawText ? rawText.substring(0, 100) : 'empty');
           }
         } catch (e: any) {
-          console.warn('[FOX-SMS] JSON parse error:', e.message);
+          console.warn('[FOX-SMS] Parse error:', e.message);
         }
       }
 
       // Process BLUE SMS
       if (blueRes.status === 'fulfilled' && blueRes.value.ok) {
         try {
-          const payload = await blueRes.value.json();
-          if (payload && payload.status === 'success' && Array.isArray(payload.data)) {
-            fetchedBlueLogs = payload.data.map((item: any) => {
-              let numStr = String(item.num || '');
-              if (numStr && !numStr.startsWith('+')) {
-                numStr = '+' + numStr;
-              }
-              const textBody = String(item.message || '');
-              let extractedOtp = '';
-              if (textBody) {
-                const match = textBody.match(/\b\d{4,8}\b/);
-                if (match) extractedOtp = match[0];
-              }
+          const rawText = await blueRes.value.text();
+          if (rawText && rawText.trim().startsWith('{')) {
+            const payload = JSON.parse(rawText);
+            if (payload && payload.status === 'success' && Array.isArray(payload.data)) {
+              fetchedBlueLogs = payload.data.map((item: any) => {
+                let numStr = String(item.num || '');
+                if (numStr && !numStr.startsWith('+')) {
+                  numStr = '+' + numStr;
+                }
+                const textBody = String(item.message || '');
+                let extractedOtp = '';
+                if (textBody) {
+                  const match = textBody.match(/\b\d{4,8}\b/);
+                  if (match) extractedOtp = match[0];
+                }
 
-              const timestampStr = item.dt || now.toISOString();
-              const deterministicId = crypto
-                .createHash('md5')
-                .update(`BLUE_${numStr}_${item.cli || 'CLI'}_${textBody}_${timestampStr}`)
-                .digest('hex');
+                const timestampStr = item.dt || now.toISOString();
+                const deterministicId = crypto
+                  .createHash('md5')
+                  .update(`BLUE_${numStr}_${item.cli || 'CLI'}_${textBody}_${timestampStr}`)
+                  .digest('hex');
 
-              const terminationName = getCountryByPhoneNumber(numStr);
+                const terminationName = getCountryByPhoneNumber(numStr);
 
-              return {
-                id: `MSG-BLUE-${deterministicId}`,
-                number: numStr,
-                termination: terminationName,
-                sid: String(item.cli || 'AUTHMSG'),
-                status: 'DELIVERED',
-                text: textBody,
-                otp: extractedOtp,
-                timestamp: new Date(timestampStr).toISOString(),
-                cost: `${parseFloat(item.payout || 0.012).toFixed(4)} USD`,
-                sender: String(item.cli || 'BLUE-SMS')
-              };
-            });
+                return {
+                  id: `MSG-BLUE-${deterministicId}`,
+                  number: numStr,
+                  termination: terminationName,
+                  sid: String(item.cli || 'AUTHMSG'),
+                  status: 'DELIVERED',
+                  text: textBody,
+                  otp: extractedOtp,
+                  timestamp: new Date(timestampStr).toISOString(),
+                  cost: `${parseFloat(item.payout || 0.012).toFixed(4)} USD`,
+                  sender: String(item.cli || 'BLUE-SMS')
+                };
+              });
+            }
+          } else {
+            console.warn('[BLUE-SMS] API returned non-JSON string:', rawText ? rawText.substring(0, 100) : 'empty');
           }
         } catch (e: any) {
-          console.warn('[BLUE-SMS] JSON parse error:', e.message);
+          console.warn('[BLUE-SMS] Parse error:', e.message);
         }
       }
 
-      const combinedLiveLogs = [...fetchedFoxLogs, ...fetchedBlueLogs];
+      // Process S1T SMS
+      if (s1tRes.status === 'fulfilled' && s1tRes.value.ok) {
+        try {
+          const rawText = await s1tRes.value.text();
+          if (rawText && rawText.trim().startsWith('{')) {
+            const payload = JSON.parse(rawText);
+            if (payload && payload.status === 'success' && Array.isArray(payload.data)) {
+              fetchedS1tLogs = payload.data.map((item: any) => {
+                let numStr = String(item.num || '');
+                if (numStr && !numStr.startsWith('+')) {
+                  numStr = '+' + numStr;
+                }
+                const textBody = String(item.message || '');
+                let extractedOtp = '';
+                if (textBody) {
+                  const match = textBody.match(/\b\d{4,8}\b/);
+                  if (match) extractedOtp = match[0];
+                }
+
+                const timestampStr = item.dt || now.toISOString();
+                const deterministicId = crypto
+                  .createHash('md5')
+                  .update(`S1T_${numStr}_${item.cli || 'CLI'}_${textBody}_${timestampStr}`)
+                  .digest('hex');
+
+                const terminationName = getCountryByPhoneNumber(numStr);
+
+                return {
+                  id: `MSG-S1T-${deterministicId}`,
+                  number: numStr,
+                  termination: terminationName,
+                  sid: String(item.cli || 'AUTHMSG'),
+                  status: 'DELIVERED',
+                  text: textBody,
+                  otp: extractedOtp,
+                  timestamp: new Date(timestampStr).toISOString(),
+                  cost: `${parseFloat(item.payout || 0.005).toFixed(4)} USD`,
+                  sender: String(item.cli || 'S1T-SMS')
+                };
+              });
+            }
+          } else {
+            console.warn('[S1T-SMS] API returned non-JSON string:', rawText ? rawText.substring(0, 100) : 'empty');
+          }
+        } catch (e: any) {
+          console.warn('[S1T-SMS] Parse error:', e.message);
+        }
+      }
+
+      const combinedLiveLogs = [...fetchedFoxLogs, ...fetchedBlueLogs, ...fetchedS1tLogs];
 
       if (combinedLiveLogs.length > 0) {
         nextAllowedPollTime = Date.now() + 4500;
         const data = readSyncData();
         
-        // Retain only authentic FOX SMS & BLUE SMS logs
+        // Retain only authentic FOX SMS, BLUE SMS, and S1T SMS logs
         const existingLogs = (data.active_sms_logs || []).filter((l: any) =>
-          l.id.startsWith('MSG-FOX-') || l.id.startsWith('MSG-BLUE-')
+          l.id.startsWith('MSG-FOX-') || l.id.startsWith('MSG-BLUE-') || l.id.startsWith('MSG-S1T-')
         );
 
         const existingIds = new Set(existingLogs.map((l: any) => l.id));
@@ -1369,7 +1450,7 @@ function getCountryByPhoneNumber(phone: string): string {
           console.warn('[LiveSMS] Firestore write notice:', dbErr.message);
         }
         broadcastUpdate(data);
-        console.log(`[LiveSMS-Sync] Synchronized ${mergedLogs.length} messages (FOX: ${fetchedFoxLogs.length}, BLUE: ${fetchedBlueLogs.length}, +${freshUnique.length} fresh).`);
+        console.log(`[LiveSMS-Sync] Synchronized ${mergedLogs.length} messages (FOX: ${fetchedFoxLogs.length}, BLUE: ${fetchedBlueLogs.length}, S1T: ${fetchedS1tLogs.length}, +${freshUnique.length} fresh).`);
       }
     } catch (err: any) {
       console.warn('[LiveSMS] Direct sync notice:', err.message);
@@ -1385,7 +1466,7 @@ function getCountryByPhoneNumber(phone: string): string {
 
   // Run full numbers background sync once on server startup (disabled to save rate limit)
   setTimeout(() => {
-    console.log('[FOX-SMS-Startup] Performing initial FOX SMS real-time messages pull...');
+    console.log('[FOX-SMS-Startup] Performing initial FOX, BLUE, & S1T SMS real-time messages pull...');
     pollIprnMessages(true);
   }, 1000);
 
@@ -1525,12 +1606,12 @@ function getCountryByPhoneNumber(phone: string): string {
   function resolveValidFromAddress(candidate?: string, fallbackUser?: string): string {
     const userEmail = (fallbackUser || currentSmtpConfig?.user || 'b969f4001@smtp-brevo.com').trim();
     if (!candidate || candidate.trim() === '' || !candidate.includes('@') || candidate.trim().length < 5) {
-      return `"Traffic Analytics" <${userEmail}>`;
+      return `"CodeFlow SMS" <${userEmail}>`;
     }
     const trimmed = candidate.trim();
     // If it's a bare email (e.g. user@example.com), wrap with display name
     if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(trimmed)) {
-      return `"Traffic Analytics" <${trimmed}>`;
+      return `"CodeFlow SMS" <${trimmed}>`;
     }
     // If it already has angled brackets <email@domain.com>, verify the email portion
     const match = trimmed.match(/<([^>]+)>/);
@@ -1538,7 +1619,7 @@ function getCountryByPhoneNumber(phone: string): string {
       return trimmed;
     }
     // If invalid format, fallback safely
-    return `"Traffic Analytics" <${userEmail}>`;
+    return `"CodeFlow SMS" <${userEmail}>`;
   }
 
   const rawEnvFrom = process.env.SMTP_FROM || '';
@@ -1781,11 +1862,11 @@ function getCountryByPhoneNumber(phone: string): string {
 
       const info = await sendBrevoEmail({
         to: recipient,
-        subject: `SMTP Relay Active - Traffic Analytics (${currentSmtpConfig.provider || 'Relay'})`,
+        subject: `SMTP Relay Active - CodeFlow SMS (${currentSmtpConfig.provider || 'Relay'})`,
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
             <div style="text-align: center; margin-bottom: 24px;">
-              <h2 style="color: #4d7c0f; margin: 0 0 8px 0; font-size: 22px; font-weight: 800;">SMTP Relay Connected</h2>
+              <h2 style="color: #0284c7; margin: 0 0 8px 0; font-size: 22px; font-weight: 800;">SMTP Relay Connected</h2>
               <p style="color: #64748b; font-size: 14px; margin: 0;">Backend email delivery service is operational.</p>
             </div>
             
@@ -1798,11 +1879,11 @@ function getCountryByPhoneNumber(phone: string): string {
             </div>
 
             <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 20px 0 0 0;">
-              This confirms that transactional emails, password resets, OTP verification codes, and 10-minute onboarding invitations can now be dispatched securely through ${currentSmtpConfig.provider || 'SMTP'}.
+              This confirms that transactional emails, password resets, OTP verification codes, and 5-minute onboarding invitations can now be dispatched securely through ${currentSmtpConfig.provider || 'SMTP'}.
             </p>
             <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
             <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">
-              Traffic Analytics Agent Portal &copy; ${new Date().getFullYear()}
+              CodeFlow SMS Portal &copy; ${new Date().getFullYear()}
             </p>
           </div>
         `,
@@ -1860,7 +1941,7 @@ function getCountryByPhoneNumber(phone: string): string {
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
             <div style="text-align: center; margin-bottom: 24px;">
-              <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 20px; font-weight: 800;">Traffic Analytics</h2>
+              <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 20px; font-weight: 800;">CodeFlow SMS</h2>
               <p style="color: #64748b; font-size: 13px; margin: 0;">${purpose}</p>
             </div>
             
@@ -1901,12 +1982,12 @@ function getCountryByPhoneNumber(phone: string): string {
 
       const info = await sendBrevoEmail({
         to: email,
-        subject: `Welcome to Traffic Analytics - Your Account is Ready`,
+        subject: `Welcome to CodeFlow SMS - Your Account is Ready`,
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
-            <h2 style="color: #4d7c0f; margin: 0 0 12px 0; font-size: 22px;">Welcome, ${name || 'User'}!</h2>
+            <h2 style="color: #0284c7; margin: 0 0 12px 0; font-size: 22px;">Welcome, ${name || 'User'}!</h2>
             <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
-              Your account has been successfully provisioned on the Traffic Analytics Portal.
+              Your account has been successfully provisioned on the CodeFlow SMS Portal.
             </p>
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; font-size: 13px; color: #334155; margin-bottom: 20px;">
               <p style="margin: 0 0 8px 0;"><strong>Username:</strong> ${name || email}</p>
@@ -1935,7 +2016,7 @@ function getCountryByPhoneNumber(phone: string): string {
   });
 
   // ==========================================
-  // 10-MINUTE ONBOARDING & INVITATION API
+  // 15-MINUTE ONBOARDING & INVITATION API
   // ==========================================
   const invitationsFilePath = path.join(process.cwd(), 'invitations.json');
 
@@ -1982,7 +2063,7 @@ function getCountryByPhoneNumber(phone: string): string {
     }
   };
 
-  // 1. Create a new 10-Minute Invitation Link
+  // 1. Create a new 15-Minute Invitation Link
   app.post('/api/create-invitation', async (req, res) => {
     try {
       const { email, name, role = 'User', balance = 50.0, inviter = 'Admin Support', hostUrl } = req.body;
@@ -1994,10 +2075,14 @@ function getCountryByPhoneNumber(phone: string): string {
       const cleanName = (name || cleanEmail.split('@')[0]).trim();
       const token = 'inv_' + crypto.randomBytes(16).toString('hex');
       const now = Date.now();
-      const TEN_MINUTES_MS = 10 * 60 * 1000;
-      const expiresAt = now + TEN_MINUTES_MS;
+      const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+      const expiresAt = now + FIFTEEN_MINUTES_MS;
 
-      const origin = hostUrl || req.get('origin') || `${req.protocol}://${req.get('host')}` || 'http://localhost:3000';
+      let origin = (hostUrl || '').trim().replace(/\/+$/, '');
+      // If no host provided or if it contains internal dev container domains, force clean Vercel / custom production domain
+      if (!origin || origin.includes('run.app') || origin.includes('localhost') || origin.includes('ais-')) {
+        origin = 'https://codeflowsms.vercel.app';
+      }
       const link = `${origin}/#onboarding?token=${token}`;
 
       const newInvitation: ServerInvitation = {
@@ -2006,7 +2091,7 @@ function getCountryByPhoneNumber(phone: string): string {
         name: cleanName,
         role: role || 'User',
         balance: typeof balance === 'number' ? balance : parseFloat(balance) || 50.0,
-        inviter: inviter || 'Traffic Analytics Support',
+        inviter: inviter || 'VoltxSMS Support',
         createdAt: now,
         expiresAt,
         status: 'active',
@@ -2014,7 +2099,7 @@ function getCountryByPhoneNumber(phone: string): string {
       };
 
       const existing = readInvitations();
-      // Revoke any previous active tokens for this specific email to prevent confusion
+      // Revoke any previous active tokens for this specific email so the fresh new link always works
       const updatedList = existing.map((item) => {
         if (item.email.toLowerCase() === cleanEmail && item.status === 'active') {
           return { ...item, status: 'expired' as const };
@@ -2025,13 +2110,13 @@ function getCountryByPhoneNumber(phone: string): string {
       updatedList.unshift(newInvitation);
       saveInvitations(updatedList);
 
-      console.log(`[Invitations] Created 10-minute invite link for ${cleanEmail}. Token: ${token}`);
+      console.log(`[Invitations] Created 15-minute invite link for ${cleanEmail}. Token: ${token}`);
 
       res.json({
         success: true,
         invitation: newInvitation,
         link,
-        expiresInSeconds: 600,
+        expiresInSeconds: 900,
       });
     } catch (err: any) {
       console.error('[Invitations] Error creating invitation:', err);
@@ -2039,18 +2124,20 @@ function getCountryByPhoneNumber(phone: string): string {
     }
   });
 
-  // 2. Verify Invitation Token
+  // 2. Verify Invitation Token (Accessible from Any Browser / Device without blocking)
   app.get('/api/verify-invitation/:token', (req, res) => {
     try {
-      const { token } = req.params;
+      const rawToken = req.params.token || '';
+      const token = rawToken.trim();
       const list = readInvitations();
-      const inv = list.find((i) => i.token === token);
+      const invIdx = list.findIndex((i) => i.token.trim().toLowerCase() === token.toLowerCase());
+      const inv = invIdx !== -1 ? list[invIdx] : null;
 
       if (!inv) {
         return res.json({
           valid: false,
           reason: 'not_found',
-          message: 'This invitation link does not exist or has been removed.',
+          message: 'This invitation link does not exist or has expired.',
         });
       }
 
@@ -2072,7 +2159,7 @@ function getCountryByPhoneNumber(phone: string): string {
         return res.json({
           valid: false,
           reason: 'expired',
-          message: 'This invitation link expired after 10 minutes. Please request a new link from your administrator.',
+          message: 'This invitation link has expired. Please request a new link.',
           invitation: {
             email: inv.email,
             name: inv.name,
@@ -2119,7 +2206,7 @@ function getCountryByPhoneNumber(phone: string): string {
       if (now > inv.expiresAt || inv.status === 'expired') {
         return res.status(400).json({
           success: false,
-          error: 'This invitation link expired after 10 minutes. Please request a new link from the administrator.',
+          error: 'This invitation link expired after 5 minutes. Please request a new link from the administrator.',
         });
       }
 
@@ -2129,12 +2216,13 @@ function getCountryByPhoneNumber(phone: string): string {
       saveInvitations(list);
 
       // Create or update registered user with 'Pending' status awaiting admin approval
-      const registeredUser = {
-        name: inv.name,
-        email: inv.email,
+      const registeredUser: ServerRegisteredUser = {
+        id: `USR-${Math.floor(100 + Math.random() * 900)}`,
+        name: inv.name || inv.email.split('@')[0],
+        email: inv.email.toLowerCase(),
         pass: password,
-        role: inv.role,
-        balance: inv.balance,
+        role: inv.role || 'User',
+        balance: inv.balance || 50.0,
         status: 'Pending',
         phone: phone || '',
         telegram: telegram || '',
@@ -2145,6 +2233,11 @@ function getCountryByPhoneNumber(phone: string): string {
         pin: pin || '',
         registeredAt: new Date().toISOString(),
       };
+
+      const existingUsers = readServerUsers();
+      const filtered = existingUsers.filter((u) => u.email.toLowerCase() !== inv.email.toLowerCase());
+      filtered.unshift(registeredUser);
+      saveServerUsers(filtered);
 
       res.json({
         success: true,
@@ -2161,32 +2254,32 @@ function getCountryByPhoneNumber(phone: string): string {
   // 4. Send Invitation Email via Brevo SMTP Relay
   app.post('/api/send-invitation-email', async (req, res) => {
     try {
-      const { email, link, name, inviter = 'Traffic Analytics Team' } = req.body;
+      const { email, link, name, inviter = 'VoltxSMS Team' } = req.body;
       if (!email || !link) {
         return res.status(400).json({ success: false, error: 'Recipient email and link are required.' });
       }
 
-      console.log(`[SMTP] Sending 10-minute onboarding email to ${email} via Brevo...`);
+      console.log(`[SMTP] Sending 5-minute onboarding email to ${email} via Brevo...`);
 
       const info = await sendBrevoEmail({
         to: email,
-        subject: 'Your 4-Step Account Setup Invitation (Expires in 10 Minutes)',
+        subject: 'Your 4-Step Account Setup Invitation (Expires in 5 Minutes)',
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 36px 28px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
             <!-- Header Brand -->
             <div style="text-align: center; margin-bottom: 28px;">
-              <div style="display: inline-block; width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #65a30d, #4d7c0f); color: white; line-height: 48px; font-size: 24px; font-weight: 900; margin-bottom: 12px;">
-                T
+              <div style="display: inline-block; width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #0284c7, #0369a1); color: white; line-height: 48px; font-size: 24px; font-weight: 900; margin-bottom: 12px;">
+                V
               </div>
-              <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Traffic Analytics</h2>
-              <p style="color: #64748b; font-size: 13px; margin: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Account Invitation</p>
+              <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">VoltxSMS</h2>
+              <p style="color: #64748b; font-size: 13px; margin: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Account Onboarding</p>
             </div>
 
             <!-- Main Message -->
             <div style="color: #334155; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">
               <p style="margin: 0 0 12px 0;">Hello <strong>${name || 'User'}</strong>,</p>
               <p style="margin: 0 0 12px 0;">
-                You have been invited by <strong>${inviter}</strong> to set up your account on the <strong>Traffic Analytics</strong> platform.
+                You have been invited by <strong>${inviter}</strong> to set up your account on the <strong>VoltxSMS</strong> platform.
               </p>
               <p style="margin: 0;">
                 Please click the button below to complete the 4 simple onboarding steps (About You, Location, Contact, and Security).
@@ -2197,13 +2290,13 @@ function getCountryByPhoneNumber(phone: string): string {
             <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 14px 18px; margin: 20px 0; display: flex; align-items: center; gap: 10px;">
               <div style="font-size: 20px;">⏳</div>
               <div style="font-size: 13px; color: #991b1b; line-height: 1.4;">
-                <strong>Strict 10-Minute Validity:</strong> For security reasons, this personalized verification link will strictly expire in <strong>10 minutes</strong>. Only you (<strong>${email}</strong>) can complete this onboarding.
+                <strong>Strict 5-Minute Validity:</strong> For security reasons, this personalized verification link will strictly expire in <strong>5 minutes</strong>. Only you (<strong>${email}</strong>) can complete this onboarding.
               </div>
             </div>
 
             <!-- Call to Action Button -->
             <div style="text-align: center; margin: 32px 0;">
-              <a href="${link}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #65a30d, #4d7c0f); color: #ffffff; text-decoration: none; padding: 15px 36px; border-radius: 12px; font-weight: 800; font-size: 15px; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(77, 124, 15, 0.35);">
+              <a href="${link}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; text-decoration: none; padding: 15px 36px; border-radius: 12px; font-weight: 800; font-size: 15px; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(3, 105, 161, 0.35);">
                 Complete 4-Step Account Setup &rarr;
               </a>
             </div>
@@ -2211,7 +2304,7 @@ function getCountryByPhoneNumber(phone: string): string {
             <!-- Backup Plaintext Link -->
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 24px; font-size: 12px; color: #64748b; word-break: break-all;">
               <p style="margin: 0 0 6px 0; font-weight: bold; color: #475569;">If the button above does not work, copy and paste this link into your browser:</p>
-              <a href="${link}" style="color: #4d7c0f; text-decoration: underline;">${link}</a>
+              <a href="${link}" style="color: #0369a1; text-decoration: underline;">${link}</a>
             </div>
 
             <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 28px 0 20px 0;" />
@@ -2219,7 +2312,7 @@ function getCountryByPhoneNumber(phone: string): string {
             <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0; line-height: 1.5;">
               This invitation was sent directly to <strong>${email}</strong>.<br/>
               If you were not expecting this invitation, you can safely disregard this email.<br/>
-              Traffic Analytics SMS Platform &copy; ${new Date().getFullYear()}
+              VoltxSMS Platform &copy; ${new Date().getFullYear()}
             </p>
           </div>
         `,
@@ -2254,6 +2347,407 @@ function getCountryByPhoneNumber(phone: string): string {
         };
       });
       res.json({ success: true, invitations: formatted });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // REGISTERED USERS & REALTIME APPROVAL API
+  // ==========================================
+  const usersFilePath = path.join(process.cwd(), 'registered_users.json');
+
+  interface ServerRegisteredUser {
+    id: string;
+    email: string;
+    name: string;
+    pass: string;
+    role: string;
+    balance: number;
+    status: 'Pending' | 'Active' | 'Rejected' | 'Suspended';
+    phone?: string;
+    telegram?: string;
+    country?: string;
+    city?: string;
+    address?: string;
+    timezone?: string;
+    pin?: string;
+    registeredAt: string;
+    approvedAt?: string;
+    ipAddress?: string;
+    location?: string;
+    device?: string;
+  }
+
+  const readServerUsers = (): ServerRegisteredUser[] => {
+    try {
+      if (fs.existsSync(usersFilePath)) {
+        const raw = fs.readFileSync(usersFilePath, 'utf8');
+        const list: ServerRegisteredUser[] = JSON.parse(raw);
+        if (Array.isArray(list)) return list;
+      }
+    } catch (e) {
+      console.error('[Users] Error reading registered_users.json:', e);
+    }
+    return [];
+  };
+
+  const saveServerUsers = (list: ServerRegisteredUser[]) => {
+    try {
+      fs.writeFileSync(usersFilePath, JSON.stringify(list, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[Users] Error saving registered_users.json:', e);
+    }
+  };
+
+  const sanitizeUserRecord = (u: any) => {
+    if (!u) return u;
+    const { pass, password, pin, ...safeUser } = u;
+    return safeUser;
+  };
+
+  // ==========================================
+  // PER-USER WORKSPACE PERSISTENCE & SYNC API
+  // ==========================================
+  const userWorkspacesFilePath = path.join(process.cwd(), 'user_workspaces.json');
+
+  const readUserWorkspaces = (): Record<string, any> => {
+    try {
+      if (fs.existsSync(userWorkspacesFilePath)) {
+        const raw = fs.readFileSync(userWorkspacesFilePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.error('[Workspaces] Error reading user_workspaces.json:', e);
+    }
+    return {};
+  };
+
+  const saveUserWorkspaces = (data: Record<string, any>) => {
+    try {
+      fs.writeFileSync(userWorkspacesFilePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[Workspaces] Error saving user_workspaces.json:', e);
+    }
+  };
+
+  app.get('/api/user-workspace/:email', (req, res) => {
+    try {
+      const email = req.params.email.toLowerCase().trim();
+      const allStores = readUserWorkspaces();
+      const userStore = allStores[email] || {
+        email,
+        rented_numbers: [],
+        test_numbers: [],
+        sms_logs: [],
+        notifications: [],
+        profile: null,
+      };
+      res.json({ success: true, workspace: userStore });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/user-workspace/:email', (req, res) => {
+    try {
+      const email = req.params.email.toLowerCase().trim();
+      const incoming = req.body || {};
+      const allStores = readUserWorkspaces();
+      const existing = allStores[email] || {
+        email,
+        rented_numbers: [],
+        test_numbers: [],
+        sms_logs: [],
+        notifications: [],
+        profile: null,
+      };
+
+      const updatedWorkspace = {
+        ...existing,
+        ...incoming,
+        email,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      allStores[email] = updatedWorkspace;
+      saveUserWorkspaces(allStores);
+
+      broadcastRealtimeEvent({
+        type: 'user_workspace_updated',
+        email,
+        workspace: updatedWorkspace,
+      });
+
+      res.json({ success: true, workspace: updatedWorkspace });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // BROADCAST NOTICES & ANNOUNCEMENT REALTIME API
+  // ==========================================
+  const broadcastsFilePath = path.join(process.cwd(), 'broadcast_notices.json');
+
+  const readBroadcasts = (): any[] => {
+    try {
+      if (fs.existsSync(broadcastsFilePath)) {
+        const raw = fs.readFileSync(broadcastsFilePath, 'utf8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) return list;
+      }
+    } catch (e) {
+      console.error('[Broadcasts] Error reading broadcast_notices.json:', e);
+    }
+    return [];
+  };
+
+  const saveBroadcasts = (list: any[]) => {
+    try {
+      fs.writeFileSync(broadcastsFilePath, JSON.stringify(list, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[Broadcasts] Error saving broadcast_notices.json:', e);
+    }
+  };
+
+  const broadcastRealtimeEvent = (eventData: any) => {
+    const payload = JSON.stringify(eventData);
+    wsClients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try { client.send(payload); } catch (e) {}
+      }
+    });
+    sseClients.forEach((res) => {
+      try { res.write(`data: ${payload}\n\n`); } catch (e) {}
+    });
+  };
+
+  // 1. Get All Broadcast Notices
+  app.get('/api/broadcasts', (req, res) => {
+    try {
+      const broadcasts = readBroadcasts();
+      res.json({ success: true, broadcasts });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 2. Save / Create Broadcast Notice (Permanent & Real-Time Broadcast)
+  app.post('/api/broadcasts', (req, res) => {
+    try {
+      const { notice, broadcasts: incomingList } = req.body;
+      let currentList = readBroadcasts();
+
+      if (Array.isArray(incomingList)) {
+        currentList = incomingList;
+      } else if (notice && notice.id) {
+        const idx = currentList.findIndex((b) => b.id === notice.id);
+        if (notice.active) {
+          // Deactivate previous active notices if this one is active
+          currentList = currentList.map((b) => ({ ...b, active: false }));
+        }
+        if (idx !== -1) {
+          currentList[idx] = notice;
+        } else {
+          currentList.unshift(notice);
+        }
+      }
+
+      saveBroadcasts(currentList);
+      broadcastRealtimeEvent({ type: 'broadcasts_updated', broadcasts: currentList });
+
+      res.json({
+        success: true,
+        message: 'Broadcast notice published and broadcast real-time to all clients.',
+        broadcasts: currentList,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 3. Delete Broadcast Notice
+  app.delete('/api/broadcasts/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const currentList = readBroadcasts();
+      const updated = currentList.filter((b) => b.id !== id);
+      saveBroadcasts(updated);
+      broadcastRealtimeEvent({ type: 'broadcasts_updated', broadcasts: updated });
+
+      res.json({ success: true, message: 'Notice deleted successfully.', broadcasts: updated });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get User Approval Status
+  app.get('/api/user-status/:email', (req, res) => {
+    try {
+      const email = req.params.email.toLowerCase().trim();
+      const users = readServerUsers();
+      const u = users.find((item) => item.email.toLowerCase() === email);
+      if (!u) {
+        return res.json({ success: true, status: 'Pending', found: false });
+      }
+      return res.json({
+        success: true,
+        found: true,
+        status: u.status,
+        user: {
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          balance: u.balance,
+          approvedAt: u.approvedAt,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // List Pending Users for Admin
+  app.get('/api/pending-users', (req, res) => {
+    try {
+      const users = readServerUsers();
+      const pending = users.filter((u) => u.status === 'Pending').map(sanitizeUserRecord);
+      res.json({ success: true, pending });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // List All Registered Users for Admin
+  app.get('/api/all-registered-users', (req, res) => {
+    try {
+      const users = readServerUsers();
+      res.json({ success: true, users: users.map(sanitizeUserRecord) });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Approve Pending User (Permanent & Instant Real-Time WebSocket Notification)
+  app.post('/api/approve-user', (req, res) => {
+    try {
+      const { email, id } = req.body;
+      if (!email && !id) {
+        return res.status(400).json({ success: false, error: 'Email or ID is required.' });
+      }
+
+      const users = readServerUsers();
+      const targetEmail = (email || '').toLowerCase().trim();
+      let updatedUser: ServerRegisteredUser | null = null;
+
+      const updatedUsers = users.map((u) => {
+        if ((id && u.id === id) || (targetEmail && u.email.toLowerCase() === targetEmail)) {
+          updatedUser = {
+            ...u,
+            status: 'Active' as const,
+            approvedAt: new Date().toISOString(),
+          };
+          return updatedUser;
+        }
+        return u;
+      });
+
+      if (!updatedUser) {
+        // If not found in file yet, insert as Active
+        updatedUser = {
+          id: id || `USR-${Math.floor(100 + Math.random() * 900)}`,
+          email: targetEmail,
+          name: targetEmail.split('@')[0],
+          pass: 'CodeFlow2026',
+          role: 'User',
+          balance: 50.0,
+          status: 'Active',
+          registeredAt: new Date().toISOString(),
+          approvedAt: new Date().toISOString(),
+        };
+        updatedUsers.unshift(updatedUser);
+      }
+
+      saveServerUsers(updatedUsers);
+      broadcastRealtimeEvent({
+        type: 'users_updated',
+        users: updatedUsers,
+        approvedEmail: targetEmail,
+        approvedStatus: 'Active',
+        user: updatedUser,
+      });
+
+      console.log(`[Admin] Approved user account: ${targetEmail}`);
+
+      res.json({
+        success: true,
+        message: `Account approved and activated for ${targetEmail}`,
+        user: updatedUser,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Reject Pending User
+  app.post('/api/reject-user', (req, res) => {
+    try {
+      const { email, id } = req.body;
+      const users = readServerUsers();
+      const targetEmail = (email || '').toLowerCase().trim();
+
+      const updatedUsers = users.map((u) => {
+        if ((id && u.id === id) || (targetEmail && u.email.toLowerCase() === targetEmail)) {
+          return { ...u, status: 'Rejected' as const };
+        }
+        return u;
+      });
+
+      saveServerUsers(updatedUsers);
+      broadcastRealtimeEvent({
+        type: 'users_updated',
+        users: updatedUsers,
+        rejectedEmail: targetEmail,
+        rejectedStatus: 'Rejected',
+      });
+
+      res.json({ success: true, message: `Rejected registration for ${targetEmail}` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // General Update User (Balance, Role, Status)
+  app.post('/api/update-user', (req, res) => {
+    try {
+      const { email, id, balance, role, status } = req.body;
+      const users = readServerUsers();
+      const targetEmail = (email || '').toLowerCase().trim();
+
+      let targetUser: ServerRegisteredUser | null = null;
+      const updatedUsers = users.map((u) => {
+        if ((id && u.id === id) || (targetEmail && u.email.toLowerCase() === targetEmail)) {
+          targetUser = {
+            ...u,
+            ...(balance !== undefined ? { balance: typeof balance === 'number' ? balance : parseFloat(balance) || 0 } : {}),
+            ...(role ? { role } : {}),
+            ...(status ? { status } : {}),
+          };
+          return targetUser;
+        }
+        return u;
+      });
+
+      saveServerUsers(updatedUsers);
+      broadcastRealtimeEvent({
+        type: 'users_updated',
+        users: updatedUsers,
+        updatedUser: targetUser,
+      });
+
+      res.json({ success: true, message: 'User updated successfully.', user: targetUser });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -2302,9 +2796,11 @@ function getCountryByPhoneNumber(phone: string): string {
     wsClients.add(ws);
     console.log('[WebSocket] New client connected. Total clients:', wsClients.size);
 
-    // Send immediate current snapshot to client
+    // Send immediate current snapshot, broadcasts, and registered users to client
     const data = readSyncData();
-    ws.send(JSON.stringify({ type: 'snapshot', data }));
+    const broadcasts = readBroadcasts();
+    const registeredUsers = readServerUsers().map(sanitizeUserRecord);
+    ws.send(JSON.stringify({ type: 'snapshot', data, broadcasts, registeredUsers }));
 
     ws.on('close', () => {
       wsClients.delete(ws);
