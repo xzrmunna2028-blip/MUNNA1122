@@ -229,11 +229,42 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
-        <span>Dashboard</span>
-        <span>&gt;</span>
-        <span className="text-slate-800 dark:text-slate-200 font-bold">My Profile</span>
+      {/* Breadcrumbs with Right-Aligned Support Shortcut */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
+          <span>Dashboard</span>
+          <span>&gt;</span>
+          <span className="text-slate-800 dark:text-slate-200 font-bold">My Profile</span>
+        </div>
+
+        {/* Right-aligned Manager Quick Contact */}
+        <div className="flex items-center gap-1.5">
+          <a
+            href="https://t.me/super_x_sms_support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0088cc]/10 hover:bg-[#0088cc]/20 border border-[#0088cc]/30 text-[#0088cc] dark:text-[#38a5e1] text-xs font-bold transition shadow-2xs"
+            title="Open Telegram Support (@super_x_sms_support)"
+          >
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+            </svg>
+            <span className="hidden sm:inline">Telegram</span>
+          </a>
+
+          <a
+            href="https://teams.microsoft.com/l/chat/0/0?users=codeflowsupport%40gmail.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#00aff0]/10 hover:bg-[#00aff0]/20 border border-[#00aff0]/30 text-[#00aff0] dark:text-[#33c2ff] text-xs font-bold transition shadow-2xs"
+            title="Open Teams Account (codeflowsupport@gmail.com)"
+          >
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.257.234 2.46.662 3.568A9.99 9.99 0 0 0 2 19c0 .552.448 1 1 1a9.99 9.99 0 0 0 3.432-.662C7.54 19.766 8.743 20 10.001 20c5.522 0 10-4.478 10-10 0-1.257-.234-2.46-.662-3.568A9.99 9.99 0 0 0 20 5c0-.552-.448-1-1-1a9.99 9.99 0 0 0-3.432.662C14.46 4.234 13.257 4 12.001 2zm3.328 12.637c-.637.795-1.637 1.264-2.887 1.346-1.428.093-2.618-.328-3.447-1.222-.507-.547-.795-1.25-.83-2.032a.75.75 0 0 1 .746-.782h1.562a.75.75 0 0 1 .744.665c.08.718.59 1.157 1.364 1.157.653 0 1.187-.315 1.187-.805 0-.414-.372-.647-1.127-.866l-1.156-.335c-1.61-.468-2.39-1.29-2.39-2.523 0-1.275.98-2.296 2.532-2.492 1.314-.166 2.457.26 3.193 1.05.474.508.736 1.152.756 1.86a.75.75 0 0 1-.749.771h-1.572a.75.75 0 0 1-.745-.678c-.067-.577-.478-.934-1.115-.934-.582 0-1.047.284-1.047.727 0 .393.35.592 1.054.795l1.096.317c1.782.518 2.593 1.353 2.593 2.627 0 1.272-.924 2.378-2.563 2.592z"/>
+            </svg>
+            <span className="hidden sm:inline">Skype</span>
+          </a>
+        </div>
       </div>
 
       {/* 1. Enhanced Header Banner Card with Agent Account Badge */}
@@ -298,7 +329,64 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* 2. Quick Actions Card */}
+      {/* 2. Compact Manager & Support Channels (Docked / Side-aligned Pill Buttons) */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-lime-100 dark:bg-lime-950/60 text-[#65a30d] dark:text-lime-400 flex items-center justify-center shrink-0">
+              <Headphones className="w-4 h-4 stroke-[2.2]" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>Manager & Support</span>
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-lime-100 dark:bg-lime-950 text-[#65a30d] dark:text-lime-400 border border-lime-300 dark:border-lime-800/80 uppercase">
+                  24/7
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                One-tap direct contact for API access and portal support
+              </p>
+            </div>
+          </div>
+
+          {/* Compact Button Group */}
+          <div className="flex items-center gap-2 sm:self-center flex-wrap">
+            {/* Telegram Support Button */}
+            <a
+              href="https://t.me/super_x_sms_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0088cc] hover:bg-[#0077b5] active:scale-95 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+              title="Contact Telegram Support (@super_x_sms_support)"
+            >
+              {/* Official Telegram Plane Icon */}
+              <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+              </svg>
+              <span>Telegram</span>
+              <ExternalLink className="w-3 h-3 opacity-70" />
+            </a>
+
+            {/* Skype / Teams Manager Button */}
+            <a
+              href="https://teams.microsoft.com/l/chat/0/0?users=codeflowsupport%40gmail.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#00aff0] hover:bg-[#009fdc] active:scale-95 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+              title="Contact Manager on Teams (codeflowsupport@gmail.com)"
+            >
+              {/* Official Skype 'S' Icon */}
+              <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.257.234 2.46.662 3.568A9.99 9.99 0 0 0 2 19c0 .552.448 1 1 1a9.99 9.99 0 0 0 3.432-.662C7.54 19.766 8.743 20 10.001 20c5.522 0 10-4.478 10-10 0-1.257-.234-2.46-.662-3.568A9.99 9.99 0 0 0 20 5c0-.552-.448-1-1-1a9.99 9.99 0 0 0-3.432.662C14.46 4.234 13.257 4 12.001 2zm3.328 12.637c-.637.795-1.637 1.264-2.887 1.346-1.428.093-2.618-.328-3.447-1.222-.507-.547-.795-1.25-.83-2.032a.75.75 0 0 1 .746-.782h1.562a.75.75 0 0 1 .744.665c.08.718.59 1.157 1.364 1.157.653 0 1.187-.315 1.187-.805 0-.414-.372-.647-1.127-.866l-1.156-.335c-1.61-.468-2.39-1.29-2.39-2.523 0-1.275.98-2.296 2.532-2.492 1.314-.166 2.457.26 3.193 1.05.474.508.736 1.152.756 1.86a.75.75 0 0 1-.749.771h-1.572a.75.75 0 0 1-.745-.678c-.067-.577-.478-.934-1.115-.934-.582 0-1.047.284-1.047.727 0 .393.35.592 1.054.795l1.096.317c1.782.518 2.593 1.353 2.593 2.627 0 1.272-.924 2.378-2.563 2.592z"/>
+              </svg>
+              <span>Skype</span>
+              <ExternalLink className="w-3 h-3 opacity-70" />
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Quick Actions Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
@@ -355,7 +443,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. Client Active Key (API Key) Card - LOCKED / UNLOCKED WITH REGENERATE   */}
+      {/* 4. Client Active Key (API Key) Card - LOCKED / UNLOCKED WITH REGENERATE   */}
       {/* ========================================================================= */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -474,7 +562,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
                   </span>
                 </span>
                 <a
-                  href="https://t.me/super_x_sms_s"
+                  href="https://t.me/super_x_sms_support"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[#65a30d] dark:text-lime-400 font-bold hover:underline flex items-center gap-1 shrink-0"
@@ -512,21 +600,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
                 </span>
               </div>
 
-              {/* Direct Contact Admin Button */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-amber-200/60 dark:border-amber-900/40">
+              {/* Direct Contact Admin Buttons (Telegram & Skype) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-amber-200/60 dark:border-amber-900/40">
                 <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
                   Need API integration access? Contact Admin Support directly:
                 </span>
-                <a
-                  href="https://t.me/super_x_sms_s"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Contact Admin (Telegram)</span>
-                  <ExternalLink className="w-3 h-3 opacity-80" />
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="https://t.me/super_x_sms_support"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl bg-[#0088cc] hover:bg-[#0077b5] active:scale-95 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
+                    title="Telegram Support (@super_x_sms_support)"
+                  >
+                    <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+                    </svg>
+                    <span>Telegram</span>
+                    <ExternalLink className="w-3 h-3 opacity-80" />
+                  </a>
+
+                  <a
+                    href="https://teams.microsoft.com/l/chat/0/0?users=codeflowsupport%40gmail.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl bg-[#00aff0] hover:bg-[#009fdc] active:scale-95 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
+                    title="Teams Manager (codeflowsupport@gmail.com)"
+                  >
+                    <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.257.234 2.46.662 3.568A9.99 9.99 0 0 0 2 19c0 .552.448 1 1 1a9.99 9.99 0 0 0 3.432-.662C7.54 19.766 8.743 20 10.001 20c5.522 0 10-4.478 10-10 0-1.257-.234-2.46-.662-3.568A9.99 9.99 0 0 0 20 5c0-.552-.448-1-1-1a9.99 9.99 0 0 0-3.432.662C14.46 4.234 13.257 4 12.001 2zm3.328 12.637c-.637.795-1.637 1.264-2.887 1.346-1.428.093-2.618-.328-3.447-1.222-.507-.547-.795-1.25-.83-2.032a.75.75 0 0 1 .746-.782h1.562a.75.75 0 0 1 .744.665c.08.718.59 1.157 1.364 1.157.653 0 1.187-.315 1.187-.805 0-.414-.372-.647-1.127-.866l-1.156-.335c-1.61-.468-2.39-1.29-2.39-2.523 0-1.275.98-2.296 2.532-2.492 1.314-.166 2.457.26 3.193 1.05.474.508.736 1.152.756 1.86a.75.75 0 0 1-.749.771h-1.572a.75.75 0 0 1-.745-.678c-.067-.577-.478-.934-1.115-.934-.582 0-1.047.284-1.047.727 0 .393.35.592 1.054.795l1.096.317c1.782.518 2.593 1.353 2.593 2.627 0 1.272-.924 2.378-2.563 2.592z"/>
+                    </svg>
+                    <span>Skype</span>
+                    <ExternalLink className="w-3 h-3 opacity-80" />
+                  </a>
+                </div>
               </div>
             </div>
           )}

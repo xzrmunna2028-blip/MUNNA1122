@@ -55,6 +55,8 @@ import {
 import { RegisteredUser } from './ActivationChatBot';
 import { MasterKeyManager } from './MasterKeyManager';
 import { InvitationManagerView } from './InvitationManagerView';
+import { AdminRangeCountryManager } from './AdminRangeCountryManager';
+import { AdminUpdateNoticeManager } from './AdminUpdateNoticeManager';
 import { NotificationItem } from '../types';
 
 export interface AdminUserRecord extends RegisteredUser {
@@ -158,6 +160,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [activeSection, setActiveSection] = useState<
     | 'overview'
     | 'users'
+    | 'invitations'
+    | 'ranges_countries'
     | 'pending_activations'
     | 'manual_create'
     | 'sub_admins'
@@ -689,6 +693,20 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       localStorage.setItem('codeflow_registered_users', JSON.stringify(updatedList));
     }
 
+    // Persist password update to server database
+    fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: selectedUserForPassword.email,
+        pass: updatedPass,
+        name: selectedUserForPassword.name,
+        role: selectedUserForPassword.role,
+        balance: selectedUserForPassword.balance,
+        status: selectedUserForPassword.status,
+      }),
+    }).catch(() => {});
+
     showToast(`Password successfully updated for ${selectedUserForPassword.email}`);
     setSelectedUserForPassword(null);
     setNewPasswordInput('');
@@ -853,6 +871,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     });
     localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
     window.dispatchEvent(new Event('storage'));
+
+    // Save permanently on server database so any browser can log in immediately
+    fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newUser.name,
+        email: newUser.email,
+        pass: newUser.pass,
+        role: newUser.role,
+        balance: newUser.balance,
+        status: 'Active',
+        location: newUser.location,
+      }),
+    }).catch((err) => console.error('[API] Admin create-user error:', err));
 
     // Automatically send welcome email with credentials via Brevo SMTP relay
     fetch('/api/send-welcome-email', {
@@ -1176,6 +1209,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const navItems = [
     { id: 'overview', label: 'Admin Overview', icon: Activity, count: null },
     {
+      id: 'ranges_countries',
+      label: 'Country & Range Manager',
+      icon: Globe,
+      count: 'Live CRUD',
+      highlight: true,
+    },
+    {
       id: 'users',
       label: 'User Management & Security',
       icon: Users,
@@ -1207,7 +1247,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       icon: Headphones,
       count: supportTickets.filter((t) => t.status === 'Open').length || null,
     },
-    { id: 'updates', label: 'Website Updates', icon: Megaphone, count: broadcasts.length },
+    { id: 'updates', label: 'Update Notice & Maintenance', icon: Megaphone, count: broadcasts.length },
     { id: 'notifications', label: 'Notification Center', icon: Bell, count: null },
   ];
 
@@ -2693,280 +2733,20 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         </div>
       )}
 
-      {/* SECTION 8: WEBSITE NOTICE BAR & UPDATES */}
+      {/* SECTION: RANGE & COUNTRY MANAGER */}
+      {activeSection === 'ranges_countries' && (
+        <AdminRangeCountryManager showToast={showToast} darkMode={darkMode} />
+      )}
+
+      {/* SECTION: WEBSITE NOTICE BAR & MAINTENANCE */}
       {activeSection === 'updates' && (
-        <div className="space-y-6">
-          {/* Live Dashboard Notice Bar Preview */}
-          <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-                <Megaphone className="w-3.5 h-3.5" />
-                <span>Live Dashboard Notice Bar Preview (User-Facing Header Banner)</span>
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">
-                Users can dismiss this notice banner anytime with the close (✕) button
-              </span>
-            </div>
-
-            {(() => {
-              const activeNotice = broadcasts.find((b) => b.active);
-              if (!activeNotice) {
-                return (
-                  <div className="p-4 rounded-xl border border-dashed border-slate-800 bg-slate-950 text-center text-xs text-slate-500">
-                    No active notice bar currently visible.
-                  </div>
-                );
-              }
-              return (
-                <div className="px-3.5 py-2.5 rounded-xl border border-cyan-500/40 bg-cyan-950/40 text-slate-200 shadow-xs flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                      <Megaphone className="w-3.5 h-3.5" />
-                    </span>
-                    <div className="flex items-center gap-2 flex-wrap min-w-0 text-xs sm:text-sm">
-                      <span className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                        {activeNotice.type || 'Notice'}
-                      </span>
-                      <span className="font-bold text-white truncate">
-                        {activeNotice.title}
-                      </span>
-                      <span className="hidden sm:inline text-slate-500 font-bold">·</span>
-                      <span className="text-slate-300 text-xs truncate max-w-sm sm:max-w-xl">
-                        {activeNotice.message}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2">
-                    {activeNotice.createdAt && (
-                      <span className="hidden sm:inline text-[11px] font-mono text-slate-400">
-                        {activeNotice.createdAt}
-                      </span>
-                    )}
-                    <span className="p-1 rounded-lg text-slate-400 bg-slate-800/80 border border-slate-700 text-[10px] font-bold">
-                      ✕ Cross Button
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Create & Post Website Update Banner Card */}
-          <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-black text-white flex items-center gap-2">
-                  <Megaphone className="w-5 h-5 text-cyan-400" />
-                  <span>Update & Publish Dashboard Notice Bar</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Publish an announcement or advisory notice displayed at the top of all user dashboards.
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateBroadcastUpdate} className="space-y-4 p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Notice Title / Headline</label>
-                  <input
-                    type="text"
-                    value={updateTitle}
-                    onChange={(e) => setUpdateTitle(e.target.value)}
-                    placeholder="e.g. System Notice: Dedicated US/BD Routes & Realtime Webhooks Active"
-                    required
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300">Notice Category</label>
-                  <select
-                    value={updateType}
-                    onChange={(e) => setUpdateType(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs text-white focus:outline-none"
-                  >
-                    <option value="info">Information Notice</option>
-                    <option value="warning">System Advisory</option>
-                    <option value="maintenance">Under Maintenance</option>
-                    <option value="urgent">Urgent Announcement</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Message Details */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">Notice Announcement Text / Content</label>
-                <textarea
-                  rows={3}
-                  value={updateMessage}
-                  onChange={(e) => setUpdateMessage(e.target.value)}
-                  placeholder="Type notice message details for users..."
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Photo Upload & Visibility Switch Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                {/* Photo Upload */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-cyan-400" />
-                    <span>Attach Notice Photo / Banner (Optional)</span>
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-dashed border-slate-700 hover:border-cyan-500 text-slate-300 text-xs font-bold cursor-pointer transition">
-                      <Upload className="w-4 h-4 text-cyan-400" />
-                      <span>{updateImage ? 'Change Attached Photo' : 'Upload Image File'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    {updateImage && (
-                      <div className="relative">
-                        <img
-                          src={updateImage}
-                          alt="Preview"
-                          className="w-12 h-12 object-cover rounded-xl border border-cyan-500 shadow-md"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setUpdateImage('')}
-                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 rounded-full text-white flex items-center justify-center text-[10px] font-bold"
-                          title="Remove image"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Visibility Switch */}
-                <div className="space-y-1.5 sm:border-l sm:border-slate-800 sm:pl-4 flex flex-col justify-center">
-                  <label className="text-xs font-bold text-slate-300">Live Notice Switch (Visibility)</label>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setUpdateActive(!updateActive)}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer border ${
-                        updateActive
-                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                          : 'bg-slate-900 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      {updateActive ? (
-                        <>
-                          <ToggleRight className="w-5 h-5 text-emerald-400" />
-                          <span>LIVE & ACTIVE</span>
-                        </>
-                      ) : (
-                        <>
-                          <ToggleLeft className="w-5 h-5 text-slate-500" />
-                          <span>OFFLINE / DRAFT</span>
-                        </>
-                      )}
-                    </button>
-                    <span className="text-[11px] text-slate-400">
-                      {updateActive ? 'Visible to all users on Dashboard' : 'Hidden from users'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit Post Button */}
-              <div className="pt-2 flex items-center gap-3">
-                <button
-                  type="submit"
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs shadow-lg shadow-cyan-950 flex items-center justify-center gap-2 cursor-pointer transition active:scale-98"
-                >
-                  <Megaphone className="w-4 h-4" />
-                  <span>Save & Broadcast Notice Bar Now</span>
-                </button>
-              </div>
-            </form>
-
-            {/* List of Published Updates */}
-            <div className="space-y-3 pt-4">
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-                Published Updates & Announcements ({broadcasts.length})
-              </span>
-              {broadcasts.map((brd) => (
-                <div
-                  key={brd.id}
-                  className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3 hover:border-slate-700 transition"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-                          brd.type === 'maintenance'
-                            ? 'bg-amber-950 text-amber-400 border-amber-800'
-                            : brd.type === 'urgent'
-                            ? 'bg-rose-950 text-rose-400 border-rose-800'
-                            : 'bg-cyan-950 text-cyan-400 border-cyan-800'
-                        }`}
-                      >
-                        {brd.type}
-                      </span>
-                      <h4 className="text-sm font-bold text-white">{brd.title}</h4>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => handleEditBroadcast(brd)}
-                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-850 hover:bg-slate-800 text-cyan-300 border border-slate-700 cursor-pointer flex items-center gap-1"
-                        title="Load into form to edit"
-                      >
-                        <Edit3 className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleToggleBroadcastStatus(brd.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer border flex items-center gap-1 ${
-                          brd.active
-                            ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
-                            : 'bg-slate-900 text-slate-500 border-slate-800'
-                        }`}
-                      >
-                        {brd.active ? <Check className="w-3 h-3" /> : null}
-                        <span>{brd.active ? 'ACTIVE' : 'DISABLED'}</span>
-                      </button>
-                      <span className="text-[10px] text-slate-400 font-mono">{brd.createdAt}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteBroadcast(brd.id)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-850 cursor-pointer"
-                        title="Delete Update"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-300 leading-relaxed">{brd.message}</p>
-
-                  {brd.image && (
-                    <div className="pt-2">
-                      <img
-                        src={brd.image}
-                        alt={brd.title}
-                        className="max-h-48 rounded-xl border border-slate-800 object-cover shadow-md"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <AdminUpdateNoticeManager
+          showToast={showToast}
+          broadcasts={broadcasts}
+          setBroadcasts={setBroadcasts}
+          darkMode={darkMode}
+          allUsers={users}
+        />
       )}
 
       {/* SECTION 9: USER NOTIFICATIONS CENTER */}

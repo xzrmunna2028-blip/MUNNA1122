@@ -67,30 +67,61 @@ const getCountryFlag = (name?: string, country?: string) => {
 
 export const TestNumbersView: React.FC = () => {
   const [testNumbersData, setTestNumbersData] = useState<TestNumberItem[]>([]);
+  const [isRefreshingLive, setIsRefreshingLive] = useState<boolean>(false);
+
+  const fetchLiveNumbers = async () => {
+    try {
+      const res = await fetch('/api/test-terminations');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
+          const mapped: TestNumberItem[] = data.numbers.map((n: any) => ({
+            id: n.id || `TEST-${n.rangeName || n.range || Math.random()}`,
+            name: n.rangeName || n.term || n.range || 'Custom Route',
+            code: (n.number && typeof n.number === 'string' && n.number.startsWith('+'))
+              ? n.number.substring(0, 7)
+              : (n.number ? `+${String(n.number).substring(0, 6)}` : ''),
+            number: n.number || '',
+            rate: n.cost || n.rate || '0.0096 USD',
+            flag: getCountryFlag(n.rangeName || n.range, n.country)
+          }));
+          setTestNumbersData(mapped);
+        }
+      }
+    } catch (e) {}
+  };
 
   useEffect(() => {
-    const fetchLiveNumbers = async () => {
-      try {
-        const res = await fetch('/api/test-terminations');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.numbers && Array.isArray(data.numbers) && data.numbers.length > 0) {
-            const mapped: TestNumberItem[] = data.numbers.map((n: any) => ({
-              id: n.id || `TEST-${n.rangeName || n.range || Math.random()}`,
-              name: n.rangeName || n.term || n.range || 'Custom Route',
-              code: (n.number && typeof n.number === 'string' && n.number.startsWith('+'))
-                ? n.number.substring(0, 7)
-                : (n.number ? `+${String(n.number).substring(0, 6)}` : ''),
-              number: n.number || '',
-              rate: n.cost || n.rate || '0.0096 USD',
-              flag: getCountryFlag(n.rangeName || n.range, n.country)
-            }));
-            setTestNumbersData(mapped);
-          }
-        }
-      } catch (e) {}
-    };
     fetchLiveNumbers();
+
+    // Auto-poll every 3 seconds for instant global cross-browser updates
+    const interval = setInterval(() => {
+      fetchLiveNumbers();
+    }, 3000);
+
+    // SSE real-time stream listener
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onmessage = () => {
+        fetchLiveNumbers();
+      };
+    } catch (e) {}
+
+    const handleStorageChange = () => {
+      fetchLiveNumbers();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('codeflow_numbers_updated', handleStorageChange);
+    window.addEventListener('rented_numbers_updated', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('codeflow_numbers_updated', handleStorageChange);
+      window.removeEventListener('rented_numbers_updated', handleStorageChange);
+    };
   }, []);
 
   const [searchQuery, setSearchQuery] = useState<string>('');

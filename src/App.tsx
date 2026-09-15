@@ -24,6 +24,7 @@ import { OnboardingView } from './components/OnboardingView';
 import { AdminPanelView } from './components/AdminPanelView';
 import { OtpSessionModal } from './components/OtpSessionModal';
 import { YourMessagesModal } from './components/YourMessagesModal';
+import { WelcomeNoticeBanner } from './components/WelcomeNoticeBanner';
 
 import {
   TimePeriod,
@@ -985,6 +986,22 @@ export default function App() {
                     <span className="text-slate-600 dark:text-slate-300 text-xs truncate max-w-sm sm:max-w-xl">
                       {activeNotice.message}
                     </span>
+                    {activeNotice.image && (
+                      <a
+                        href={activeNotice.image}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 text-[10px] font-bold border border-cyan-500/30 transition"
+                        title="View Notice Attachment Photo"
+                      >
+                        <img
+                          src={activeNotice.image}
+                          alt="Notice"
+                          className="w-3.5 h-3.5 object-cover rounded"
+                        />
+                        <span>View Photo</span>
+                      </a>
+                    )}
                   </div>
                 </div>
 
@@ -1051,6 +1068,9 @@ export default function App() {
         initialNumber={modalInitialNumber}
         initialLog={modalInitialLog}
       />
+
+      {/* Global Welcome / Telegram Updates Notice Popup Banner */}
+      <WelcomeNoticeBanner darkMode={darkMode} />
     </div>
   );
 }

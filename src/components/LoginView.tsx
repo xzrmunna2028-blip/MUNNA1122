@@ -59,8 +59,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   }, []);
 
-  // Sign In submit handler
-  const handleLogin = (e: React.FormEvent) => {
+  // Real-time listener for user approval while waiting on login screen
+  const startApprovalPolling = (email: string) => {
+    const checkInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/user-status/${encodeURIComponent(email)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'Active') {
+            clearInterval(checkInterval);
+            setSuccessMessage('🎉 আপনার অ্যাকাউন্টটি অ্যাডমিন অনুমোদন করেছেন! ড্যাশবোর্ডে প্রবেশ করানো হচ্ছে...');
+            setTimeout(() => {
+              completeLogin(email, data.user?.name);
+            }, 1000);
+          }
+        }
+      } catch (e) {}
+    }, 2500);
+
+    setTimeout(() => clearInterval(checkInterval), 180000);
+  };
+
+  // Sign In submit handler with Universal Server Database Support
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
@@ -79,104 +100,116 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const lowerUser = inputUser.toLowerCase();
+    try {
+      // 1. Try Universal Server Authentication across Any Browser
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inputUser, password: inputPass }),
+      });
 
-      // 1. Master Admin Login Check: xzrmunna7788@gmail.com / XZRMUNNA12061
-      if (
-        (lowerUser === 'xzrmunna7788@gmail.com' || lowerUser === 'xzrmunna7788') &&
-        inputPass === 'XZRMUNNA12061'
-      ) {
-        completeLogin('xzrmunna7788@gmail.com');
+      const data = await res.json();
+
+      if (res.ok && data.success && data.user) {
+        completeLogin(data.user.email, data.user.name);
         return;
       }
 
-      // 2. Demo/Standard User Fallbacks
-      if (
-        (lowerUser === 'user@codeflow.com' || lowerUser === 'xzrmunna974@gmail.com') &&
-        (inputPass === 'codeflow123' || inputPass === 'MUNNA11')
-      ) {
-        completeLogin(inputUser);
+      if (data.status === 'Pending') {
+        setIsLoading(false);
+        setErrorMessage(
+          '⚠️ আপনার অ্যাকাউন্টটি এখনো অ্যাডমিন অনুমোদনের অপেক্ষায় রয়েছে (Pending Approval)। অ্যাডমিন অনুমোদন দিলে আপনি সাথে সাথে যেকোনো ব্রাউজার থেকে প্রবেশ করতে পারবেন।'
+        );
+        startApprovalPolling(inputUser.toLowerCase());
         return;
       }
 
-      // Check if this account is currently pending approval
-      const pendingStr = localStorage.getItem('codeflow_pending_activations');
-      if (pendingStr) {
-        try {
-          const pendingList = JSON.parse(pendingStr);
-          if (Array.isArray(pendingList)) {
-            const foundPending = pendingList.find(
-              (p: any) =>
-                p.email?.toLowerCase().trim() === lowerUser ||
-                p.name?.toLowerCase().trim() === lowerUser
-            );
-            if (foundPending) {
+      if (data.status === 'Suspended') {
+        setIsLoading(false);
+        setErrorMessage('আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে (Suspended)।');
+        return;
+      }
+
+      if (data.status === 'Rejected') {
+        setIsLoading(false);
+        setErrorMessage('আপনার অ্যাকাউন্ট নিবন্ধনটি বাতিল করা হয়েছে।');
+        return;
+      }
+
+      if (data.error && !res.ok) {
+        setIsLoading(false);
+        setErrorMessage(data.error);
+        return;
+      }
+    } catch (err) {
+      console.warn('[Auth] Server login failed, checking local fallback:', err);
+    }
+
+    // Local Fallback Check
+    const lowerUser = inputUser.toLowerCase();
+
+    // 1. Master Admin Login Check
+    if (
+      (lowerUser === 'xzrmunna7788@gmail.com' || lowerUser === 'xzrmunna7788') &&
+      inputPass === 'XZRMUNNA12061'
+    ) {
+      completeLogin('xzrmunna7788@gmail.com');
+      return;
+    }
+
+    // 2. Demo User Fallback
+    if (
+      (lowerUser === 'user@codeflow.com' || lowerUser === 'xzrmunna974@gmail.com') &&
+      (inputPass === 'codeflow123' || inputPass === 'MUNNA11')
+    ) {
+      completeLogin(inputUser);
+      return;
+    }
+
+    // 3. Check admin users in localStorage
+    const adminUsersStr = localStorage.getItem('codeflow_admin_users_list_v2');
+    if (adminUsersStr) {
+      try {
+        const adminUsers = JSON.parse(adminUsersStr);
+        if (Array.isArray(adminUsers)) {
+          const foundAdminUser = adminUsers.find(
+            (u: any) =>
+              u.email?.toLowerCase().trim() === lowerUser ||
+              u.name?.toLowerCase().trim() === lowerUser
+          );
+          if (foundAdminUser && foundAdminUser.pass === inputPass) {
+            if (foundAdminUser.status === 'Pending') {
               setIsLoading(false);
-              setErrorMessage('Your account is currently PENDING admin approval. Please wait for the administrator to activate your account.');
+              setErrorMessage('Your account status is PENDING approval. Please wait for an administrator to activate your access.');
               return;
             }
+            completeLogin(foundAdminUser.email, foundAdminUser.name);
+            return;
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
+    }
 
-      // 3. Check admin-created users from localStorage
-      const adminUsersStr = localStorage.getItem('codeflow_admin_users_list_v2');
-      if (adminUsersStr) {
-        try {
-          const adminUsers = JSON.parse(adminUsersStr);
-          if (Array.isArray(adminUsers)) {
-            const foundAdminUser = adminUsers.find(
-              (u: any) =>
-                u.email?.toLowerCase().trim() === lowerUser ||
-                u.name?.toLowerCase().trim() === lowerUser
-            );
-            if (foundAdminUser && foundAdminUser.pass === inputPass) {
-              if (foundAdminUser.status === 'Pending') {
-                setIsLoading(false);
-                setErrorMessage('Your account status is PENDING approval. Please wait for an administrator to activate your access.');
-                return;
-              }
-              if (foundAdminUser.status === 'Suspended') {
-                setIsLoading(false);
-                setErrorMessage('Your account has been temporarily suspended by the administrator.');
-                return;
-              }
-              if (foundAdminUser.status === 'Banned') {
-                setIsLoading(false);
-                setErrorMessage('This account has been banned from the platform.');
-                return;
-              }
-              completeLogin(foundAdminUser.email, foundAdminUser.name);
-              return;
-            }
-          }
-        } catch (e) {}
-      }
+    // 4. Check registered users in localStorage
+    const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
+    const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
+    const foundUser = registeredUsers.find(
+      (u) =>
+        u.email.toLowerCase() === lowerUser ||
+        u.name.toLowerCase() === lowerUser
+    );
 
-      // 4. Check dynamically registered users from localStorage
-      const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
-      const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
-      
-      const foundUser = registeredUsers.find(
-        (u) =>
-          u.email.toLowerCase() === lowerUser ||
-          u.name.toLowerCase() === lowerUser
-      );
+    if (foundUser && foundUser.pass === inputPass) {
+      completeLogin(foundUser.email, foundUser.name);
+      return;
+    }
 
-      if (foundUser && foundUser.pass === inputPass) {
-        completeLogin(foundUser.email, foundUser.name);
-        return;
-      }
-
-      // Invalid login credentials
-      setIsLoading(false);
-      setErrorMessage('Invalid Email or Password! Please try again.');
-    }, 800);
+    setIsLoading(false);
+    setErrorMessage('Invalid Email or Password! Please try again.');
   };
 
-  // Sign Up / Registration submit handler
-  const handleRegister = (e: React.FormEvent) => {
+  // Sign Up / Registration submit handler with Server Persistence
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
@@ -205,51 +238,53 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
-      const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
+    // Call server registration
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password: pass }),
+      });
 
-      // Check if email already exists
-      const isDuplicate = registeredUsers.some(
-        (u) => u.email.toLowerCase() === email.toLowerCase()
-      );
-
-      if (isDuplicate) {
+      const data = await res.json();
+      if (!res.ok && data.error) {
         setIsLoading(false);
-        setErrorMessage('This Email Address is already registered. Please sign in.');
+        setErrorMessage(data.error);
         return;
       }
+    } catch (e) {
+      console.warn('[Register] Server offline, saving locally:', e);
+    }
 
-      // Save new user safely
-      const newUser: RegisteredUser = {
-        name,
-        email,
-        pass,
-        activatedAt: new Date().toISOString(),
-      };
+    // Save locally
+    const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
+    const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
+    const newUser: RegisteredUser = {
+      name,
+      email,
+      pass,
+      activatedAt: new Date().toISOString(),
+    };
 
-      registeredUsers.push(newUser);
-      localStorage.setItem('codeflow_registered_users', JSON.stringify(registeredUsers));
+    registeredUsers.push(newUser);
+    localStorage.setItem('codeflow_registered_users', JSON.stringify(registeredUsers));
 
-      setIsLoading(false);
-      setSuccessMessage('Account created successfully! Switching to sign in...');
-      
-      // Auto-prefill the email for ease of login
-      setIdentifier(email);
-      setPassword('');
-      
-      // Reset form states
-      setRegName('');
-      setRegEmail('');
-      setRegPassword('');
-      setRegConfirmPassword('');
-      
-      // Switch back to login mode after registration
-      setTimeout(() => {
-        setIsRegisterMode(false);
-        setSuccessMessage('');
-      }, 1500);
-    }, 1000);
+    setIsLoading(false);
+    setSuccessMessage('Account registered successfully! Awaiting admin approval.');
+
+    // Auto-prefill the email for ease of login
+    setIdentifier(email);
+    setPassword('');
+
+    setRegName('');
+    setRegEmail('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+
+    setTimeout(() => {
+      setIsRegisterMode(false);
+      setSuccessMessage('');
+    }, 1500);
   };
 
   const completeLogin = (userEmail: string, explicitName?: string) => {
@@ -331,28 +366,33 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo and Brand Info */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="flex flex-col items-center text-center mb-6"
-        >
-          <div className="w-14 h-14 rounded-2xl bg-slate-900/60 p-0.5 shadow-xl flex items-center justify-center shrink-0 border border-slate-800 transform hover:scale-105 transition-transform duration-300">
-            <img
-              src="/code_flow_logo.jpg"
-              alt="Code Flow Logo"
-              className="w-full h-full object-contain rounded-xl"
-            />
-          </div>
-          
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-1.5 justify-center mt-2.5">
-            Code Flow <span className="text-indigo-400 font-extrabold">SMS</span>
-          </h1>
-          <p className="text-[9px] font-bold tracking-[0.2em] text-slate-500 uppercase mt-1">
-            ENTERPRISE VERIFICATION NETWORK
-          </p>
-        </motion.div>
+        {/* Logo and Brand Info (Only shown when not on Create Account screen to avoid duplicate logo) */}
+        <AnimatePresence>
+          {!showCreateAccountView && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex flex-col items-center text-center mb-6 overflow-hidden"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-slate-900/60 p-0.5 shadow-xl flex items-center justify-center shrink-0 border border-slate-800 transform hover:scale-105 transition-transform duration-300">
+                <img
+                  src="/code_flow_logo.jpg"
+                  alt="Code Flow Logo"
+                  className="w-full h-full object-contain rounded-xl"
+                />
+              </div>
+              
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-1.5 justify-center mt-2.5">
+                Code Flow <span className="text-indigo-400 font-extrabold">SMS</span>
+              </h1>
+              <p className="text-[9px] font-bold tracking-[0.2em] text-slate-500 uppercase mt-1">
+                ENTERPRISE VERIFICATION NETWORK
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Container Card with AnimatePresence */}
         <AnimatePresence mode="wait">
@@ -394,7 +434,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   ENGLISH
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed font-normal">
-                  To get started, please contact us on Telegram with your company name and the service you require. Our team will set up your account and send you your login details.
+                  To get started, please contact us on <strong>Telegram</strong> or <strong>Skype</strong> with your company name and the service you require. Our team will set up your account and send you your login credentials.
                 </p>
               </div>
 
@@ -406,30 +446,57 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   ARABIC
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed font-normal text-right">
-                  يتم إنشاء الحسابات على هذه اللوحة بواسطة فريقنا. للبدء، يرجى التواصل معنا عبر التليجرام مع اسم شركتك والخدمة التي تحتاجها. سيقوم فريقنا بإعداد حسابك وإرسال بيانات الدخول إليك.
+                  يتم إنشاء الحسابات على هذه اللوحة بواسطة فريقنا. للبدء، يرجى التواصل معنا عبر التيليجرام أو سكايب مع اسم شركتك والخدمة التي تحتاجها. سيقوم فريقنا بإعداد حسابك وإرسال بيانات الدخول إليك.
                 </p>
               </div>
 
               <div className="w-full h-[1px] bg-slate-800/70 my-6" />
 
-              {/* Green Telegram Action Button & Back Button */}
-              <div className="flex flex-col items-center justify-center gap-4">
-                <a
-                  href="https://t.me/xzrmunna974"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/25 transform hover:scale-110 active:scale-95 transition-all duration-200 group"
-                  title="Contact us directly on Telegram"
-                >
-                  <svg className="w-6 h-6 fill-current text-slate-950 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
-                  </svg>
-                </a>
+              {/* Support Channels: Telegram & Skype (Compact, Pill Style matching Profile) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  {/* Option 1: Telegram Support Pill */}
+                  <a
+                    href="https://t.me/super_x_sms_support"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#0088cc] hover:bg-[#0077b5] active:scale-95 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                    title="Telegram Support (@super_x_sms_support)"
+                  >
+                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+                    </svg>
+                    <span>Telegram</span>
+                  </a>
 
+                  {/* Option 2: Skype Support (Opens Teams Chat) Pill */}
+                  <a
+                    href="https://teams.microsoft.com/l/chat/0/0?users=codeflowsupport%40gmail.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#00aff0] hover:bg-[#009fdc] active:scale-95 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                    title="Skype / Teams Support (codeflowsupport@gmail.com)"
+                  >
+                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.257.234 2.46.662 3.568A9.99 9.99 0 0 0 2 19c0 .552.448 1 1 1a9.99 9.99 0 0 0 3.432-.662C7.54 19.766 8.743 20 10.001 20c5.522 0 10-4.478 10-10 0-1.257-.234-2.46-.662-3.568A9.99 9.99 0 0 0 20 5c0-.552-.448-1-1-1a9.99 9.99 0 0 0-3.432.662C14.46 4.234 13.257 4 12.001 2zm3.328 12.637c-.637.795-1.637 1.264-2.887 1.346-1.428.093-2.618-.328-3.447-1.222-.507-.547-.795-1.25-.83-2.032a.75.75 0 0 1 .746-.782h1.562a.75.75 0 0 1 .744.665c.08.718.59 1.157 1.364 1.157.653 0 1.187-.315 1.187-.805 0-.414-.372-.647-1.127-.866l-1.156-.335c-1.61-.468-2.39-1.29-2.39-2.523 0-1.275.98-2.296 2.532-2.492 1.314-.166 2.457.26 3.193 1.05.474.508.736 1.152.756 1.86a.75.75 0 0 1-.749.771h-1.572a.75.75 0 0 1-.745-.678c-.067-.577-.478-.934-1.115-.934-.582 0-1.047.284-1.047.727 0 .393.35.592 1.054.795l1.096.317c1.782.518 2.593 1.353 2.593 2.627 0 1.272-.924 2.378-2.563 2.592z"/>
+                    </svg>
+                    <span>Skype</span>
+                  </a>
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  Direct support active 24/7. Click either channel to initiate direct setup.
+                </p>
+              </div>
+
+              <div className="w-full h-[1px] bg-slate-800/70 my-5" />
+
+              {/* Back to Login Button */}
+              <div className="flex flex-col items-center justify-center gap-4">
                 <button
                   type="button"
                   onClick={() => setShowCreateAccountView(false)}
-                  className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer mt-1"
+                  className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>← Back to Login</span>
                 </button>

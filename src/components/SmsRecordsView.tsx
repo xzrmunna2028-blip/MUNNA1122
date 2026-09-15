@@ -167,7 +167,20 @@ export const SmsRecordsView: React.FC = () => {
     };
   };
 
-  const loadAllRecords = () => {
+  const loadAllRecords = async () => {
+    try {
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+          const parsed = data.logs as SmsLog[];
+          const customItems = parsed.map(convertCustomLog);
+          setRecords(customItems);
+          return;
+        }
+      }
+    } catch (e) {}
+
     const existing = localStorage.getItem('user_sms_logs');
     let customItems: SmsRecordItem[] = [];
     if (existing) {
@@ -186,7 +199,24 @@ export const SmsRecordsView: React.FC = () => {
     window.addEventListener('storage', loadAllRecords);
     window.addEventListener('user_sms_updated', loadAllRecords);
     window.addEventListener('real_sms_updated', loadAllRecords);
+
+    // Auto-poll every 3s
+    const interval = setInterval(() => {
+      loadAllRecords();
+    }, 3000);
+
+    // SSE Stream
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onmessage = () => {
+        loadAllRecords();
+      };
+    } catch (e) {}
+
     return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
       window.removeEventListener('storage', loadAllRecords);
       window.removeEventListener('user_sms_updated', loadAllRecords);
       window.removeEventListener('real_sms_updated', loadAllRecords);

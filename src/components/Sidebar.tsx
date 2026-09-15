@@ -175,49 +175,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Top Header & Brand Area (Soft Harmonious Tone + Centered Logo + Title + Close Button) */}
-        <div className="pt-5 px-5 pb-4 flex flex-col items-center justify-center relative shrink-0 bg-gradient-to-b from-slate-800/80 via-slate-850 to-slate-900/95 backdrop-blur-md text-white shadow-sm border-b border-slate-700/30">
+        {/* Top Header & Brand Area: Premium Warm Amber/Yellow Header Accent matching Brand Logo */}
+        <div className="pt-6 px-5 pb-5 flex flex-col items-center justify-center relative shrink-0 bg-gradient-to-b from-amber-500/20 via-slate-900 to-slate-950 text-white shadow-sm border-b border-amber-500/20">
           {/* Close Button Top Right */}
           <button
             onClick={() => setOpen(false)}
-            className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
+            className="absolute top-3.5 right-3.5 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
             title="Close Menu"
           >
             <X className="w-5 h-5" />
           </button>
 
-          {/* Centered Brand Logo Badge with Uploaded Logo */}
-          <div className="w-16 h-16 rounded-2xl bg-white/95 border border-slate-700/60 shadow-lg shadow-cyan-500/10 p-1 flex items-center justify-center relative mb-2.5 shrink-0 overflow-hidden">
-            <img
-              src="/code_flow_logo.jpg"
-              alt="Code Flow Logo"
-              className="w-full h-full object-contain rounded-xl"
-            />
+          {/* Centered Brand Logo Badge with Radiant Gold/Amber Glow and Crisp Border */}
+          <div className="w-18 h-18 rounded-2xl bg-amber-400/15 border-2 border-amber-400/50 shadow-xl shadow-amber-500/20 p-1.5 flex items-center justify-center relative mb-3 shrink-0 overflow-hidden group">
+            <div className="w-full h-full rounded-xl bg-white p-0.5 shadow-inner flex items-center justify-center overflow-hidden">
+              <img
+                src="/code_flow_logo.jpg"
+                alt="Code Flow Logo"
+                className="w-full h-full object-contain rounded-lg transform group-hover:scale-105 transition-transform duration-300"
+              />
+            </div>
           </div>
 
           {/* Website Name */}
-          <h2 className="text-xl font-black tracking-tight flex items-center gap-1.5 leading-tight">
-            <span className="text-white">Code Flow</span>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-pink-400 font-extrabold">
+          <h2 className="text-xl font-black tracking-tight flex items-center gap-1.5 leading-tight text-white">
+            <span>Code Flow</span>
+            <span className="text-amber-400 font-extrabold drop-shadow-sm">
               SMS
             </span>
           </h2>
-          <span className="text-[10px] font-extrabold text-cyan-400/90 tracking-widest uppercase mt-0.5">
+          <span className="text-[10px] font-black text-amber-300/90 tracking-[0.25em] uppercase mt-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30">
             SMS PANEL
           </span>
         </div>
 
-        {/* Animated Rainbow Border Line */}
-        <div className="w-full h-[3.5px] rainbow-animated-border shrink-0 shadow-md" />
+        {/* Clean Modern Solid Amber/Gold Striped Border Line */}
+        <div className="w-full h-[3px] bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 shrink-0 shadow-sm" />
 
-        {/* Navigation Categories and Links */}
-        <nav className="flex-1 px-4 py-4 space-y-5 overflow-y-auto custom-sidebar-scrollbar">
+        {/* Navigation Categories and Links - Generous, perfectly spaced buttons filling the drawer beautifully */}
+        <nav className="flex-1 px-3.5 py-5 space-y-6 overflow-y-auto custom-sidebar-scrollbar">
           {sections.map((section) => (
-            <div key={section.title} className="space-y-2">
-              <span className="px-3 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 tracking-widest block uppercase">
+            <div key={section.title} className="space-y-2.5">
+              <span className="px-3 text-[11px] font-extrabold text-slate-400 dark:text-slate-400 tracking-wider block uppercase">
                 {section.title}
               </span>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {section.items.map((item) => {
                   const Icon = item.icon;
                   const hasSub = item.subItems && item.subItems.length > 0;
@@ -225,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   const isActive = activeTab === item.id;
                   
                   return (
-                    <div key={item.id} className="space-y-1">
+                    <div key={item.id} className="space-y-1.5">
                       <button
                         onClick={() => {
                           if (hasSub) {
@@ -235,15 +237,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             setOpen(false);
                           }
                         }}
-                        className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 cursor-pointer ${
+                        className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-sm font-bold transition-all duration-150 cursor-pointer ${
                           isActive
-                            ? 'bg-[#65a30d] text-white shadow-md shadow-lime-950/50 font-black'
-                            : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                            ? 'bg-[#65a30d] text-white shadow-lg shadow-lime-950/60 font-black scale-[1.01]'
+                            : 'text-slate-200 hover:bg-slate-800/90 hover:text-white border border-transparent hover:border-slate-800'
                         }`}
                       >
                         <div className="flex items-center gap-3.5">
-                          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
+                          <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                          <span className="text-[13px] sm:text-sm">{item.label}</span>
                         </div>
                         
                         {/* Badge or Chevron check */}
@@ -264,7 +266,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                       {/* Sub Items Accordion */}
                       {hasSub && isExpanded && (
-                        <div className="pl-6 pr-2 py-1.5 space-y-1.5 ml-5 border-l-2 border-slate-800">
+                        <div className="pl-6 pr-2 py-2 space-y-2 ml-5 border-l-2 border-slate-800">
                           {item.subItems?.map((sub) => {
                             const isSubActive = activeTab === sub.id;
                             return (
@@ -274,7 +276,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   setActiveTab(sub.id);
                                   setOpen(false);
                                 }}
-                                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold block transition-all duration-150 cursor-pointer ${
+                                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold block transition-all duration-150 cursor-pointer ${
                                   isSubActive
                                     ? 'bg-lime-950/60 text-lime-400 border-l-2 border-[#65a30d] rounded-l-none font-extrabold'
                                     : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
@@ -295,31 +297,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Sidebar Footer with Quick Links */}
-        <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/80 space-y-2.5">
+        <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/80 space-y-2">
           {/* Telegram Action */}
           <a
-            href="https://t.me/super_x_sms_s"
+            href="https://t.me/super_x_sms_support"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-900 text-xs sm:text-sm font-bold text-white border border-slate-800 hover:border-lime-500/50 hover:bg-slate-800/80 transition cursor-pointer"
+            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[#0088cc]/15 hover:bg-[#0088cc]/25 text-xs sm:text-sm font-bold text-white border border-[#0088cc]/40 hover:border-[#0088cc] transition cursor-pointer"
           >
-            <div className="flex items-center gap-3">
-              <Send className="w-4 h-4 text-lime-400 -rotate-12" />
-              <span>Telegram Channel</span>
+            <div className="flex items-center gap-2.5">
+              <svg className="w-4 h-4 fill-[#0088cc]" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+              </svg>
+              <span>Telegram Support</span>
             </div>
-            <ExternalLink className="w-4 h-4 text-slate-400" />
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
           </a>
 
-          {/* Email Action */}
+          {/* Skype Action (Teams chat inside) */}
           <a
-            href="mailto:codeflowsupport@gmail.com"
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-900/60 text-xs sm:text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition text-left cursor-pointer border border-transparent hover:border-slate-800"
+            href="https://teams.microsoft.com/l/chat/0/0?users=codeflowsupport%40gmail.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[#00aff0]/15 hover:bg-[#00aff0]/25 text-xs sm:text-sm font-bold text-white border border-[#00aff0]/40 hover:border-[#00aff0] transition cursor-pointer"
+            title="Open Teams Account (codeflowsupport@gmail.com)"
           >
-            <div className="flex items-center gap-3">
-              <Mail className="w-4 h-4 text-lime-400" />
-              <span>Email</span>
+            <div className="flex items-center gap-2.5">
+              <svg className="w-4 h-4 fill-[#00aff0]" viewBox="0 0 24 24">
+                <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.257.234 2.46.662 3.568A9.99 9.99 0 0 0 2 19c0 .552.448 1 1 1a9.99 9.99 0 0 0 3.432-.662C7.54 19.766 8.743 20 10.001 20c5.522 0 10-4.478 10-10 0-1.257-.234-2.46-.662-3.568A9.99 9.99 0 0 0 20 5c0-.552-.448-1-1-1a9.99 9.99 0 0 0-3.432.662C14.46 4.234 13.257 4 12.001 2zm3.328 12.637c-.637.795-1.637 1.264-2.887 1.346-1.428.093-2.618-.328-3.447-1.222-.507-.547-.795-1.25-.83-2.032a.75.75 0 0 1 .746-.782h1.562a.75.75 0 0 1 .744.665c.08.718.59 1.157 1.364 1.157.653 0 1.187-.315 1.187-.805 0-.414-.372-.647-1.127-.866l-1.156-.335c-1.61-.468-2.39-1.29-2.39-2.523 0-1.275.98-2.296 2.532-2.492 1.314-.166 2.457.26 3.193 1.05.474.508.736 1.152.756 1.86a.75.75 0 0 1-.749.771h-1.572a.75.75 0 0 1-.745-.678c-.067-.577-.478-.934-1.115-.934-.582 0-1.047.284-1.047.727 0 .393.35.592 1.054.795l1.096.317c1.782.518 2.593 1.353 2.593 2.627 0 1.272-.924 2.378-2.563 2.592z"/>
+              </svg>
+              <span>Skype Manager</span>
             </div>
-            <ExternalLink className="w-4 h-4 text-slate-400" />
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
           </a>
 
           {/* Logout Action */}
@@ -332,7 +341,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }
               setOpen(false);
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs sm:text-sm font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition text-left cursor-pointer border border-transparent"
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition text-left cursor-pointer border border-transparent"
           >
             <LogOut className="w-4 h-4" />
             <span>Logout</span>

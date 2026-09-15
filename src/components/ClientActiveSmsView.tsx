@@ -71,8 +71,31 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  // Sync with real-time logs in user_sms_logs (user personal panel)
-  const loadLogs = () => {
+  // Sync with real-time logs in user_sms_logs and server endpoint (/api/active-sms)
+  const loadLogs = async () => {
+    try {
+      const res = await fetch('/api/active-sms');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+          const mapped: SmsLog[] = data.logs.map((l: any) => ({
+            timestamp: l.timestamp || new Date().toISOString(),
+            status: l.status || 'DELIVERED',
+            termination: l.termination || 'Route',
+            number: l.number || '',
+            sid: l.sid || l.brand || 'Service',
+            cost: l.cost || '0.0096 USD',
+            text: l.text || '',
+            otp: l.otp || '',
+            service: l.service || l.brand || 'Service'
+          }));
+          setLiveLogs(mapped);
+          localStorage.setItem('user_sms_logs', JSON.stringify(mapped));
+          return;
+        }
+      }
+    } catch (e) {}
+
     const existing = localStorage.getItem('user_sms_logs');
     if (existing) {
       try {
@@ -88,7 +111,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     setIsApiSyncing(true);
     try {
       await fetch('/api/trigger-sync', { method: 'POST' });
-      loadLogs();
+      await loadLogs();
     } catch (e) {
       console.error('IPRN API trigger-sync error:', e);
     } finally {
@@ -103,7 +126,23 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     window.addEventListener('user_sms_updated', handleSync);
     window.addEventListener('real_sms_updated', handleSync);
 
+    // Auto-poll every 3s so any client device updates instantly
+    const interval = setInterval(() => {
+      loadLogs();
+    }, 3000);
+
+    // Real-Time SSE listener
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/stream-updates');
+      eventSource.onmessage = () => {
+        loadLogs();
+      };
+    } catch (e) {}
+
     return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('user_sms_updated', handleSync);
       window.removeEventListener('real_sms_updated', handleSync);
