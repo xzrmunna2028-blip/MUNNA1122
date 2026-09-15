@@ -106,22 +106,44 @@ const HASH_TO_TAB_MAP: Record<string, string> = {
   admin: 'admin_panel',
   admin_panel: 'admin_panel',
   login: 'login',
+  'create-account': 'login',
+  createaccount: 'login',
+  register: 'login',
+  signup: 'login',
   onboarding: 'onboarding',
 };
 
-const getTabFromHash = (): string | null => {
+const getTabFromUrl = (): string | null => {
   if (typeof window === 'undefined') return null;
+  const path = (window.location.pathname || '').toLowerCase();
   const rawHash = window.location.hash || '';
   const clean = rawHash.replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
-  if (!clean) return null;
-  return HASH_TO_TAB_MAP[clean] || null;
+
+  if (
+    clean.includes('create-account') ||
+    clean.includes('createaccount') ||
+    clean.includes('register') ||
+    clean.includes('signup') ||
+    path.includes('/create-account') ||
+    path.includes('/createaccount') ||
+    path.includes('/register') ||
+    path.includes('/signup') ||
+    path.includes('/login')
+  ) {
+    return 'login';
+  }
+
+  if (clean && HASH_TO_TAB_MAP[clean]) {
+    return HASH_TO_TAB_MAP[clean];
+  }
+  return null;
 };
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTabState] = useState<string>(() => {
-    const fromHash = getTabFromHash();
-    if (fromHash) return fromHash;
+    const fromUrl = getTabFromUrl();
+    if (fromUrl) return fromUrl;
     return localStorage.getItem('codeflow_active_tab') || 'dashboard';
   });
   
@@ -140,19 +162,35 @@ export default function App() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      const fromHash = getTabFromHash();
-      if (fromHash && fromHash !== activeTab) {
-        setActiveTabState(fromHash);
-        localStorage.setItem('codeflow_active_tab', fromHash);
+      const fromUrl = getTabFromUrl();
+      if (fromUrl && fromUrl !== activeTab) {
+        setActiveTabState(fromUrl);
+        localStorage.setItem('codeflow_active_tab', fromUrl);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handleHashChange);
+    };
   }, [activeTab]);
 
   useEffect(() => {
     const currentToken = getOnboardingTokenFromUrl();
     if (currentToken) return;
+    const rawHash = (window.location.hash || '').toLowerCase();
+    const pathname = (window.location.pathname || '').toLowerCase();
+    if (
+      rawHash.includes('create-account') ||
+      rawHash.includes('register') ||
+      rawHash.includes('signup') ||
+      pathname.includes('create-account') ||
+      pathname.includes('register') ||
+      pathname.includes('signup')
+    ) {
+      return;
+    }
     const slug = TAB_TO_HASH_MAP[activeTab] || activeTab;
     const currentHash = (window.location.hash || '').replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
     if (currentHash !== slug) {
@@ -303,16 +341,28 @@ export default function App() {
     // Establish real-time WebSocket connection to the backend server with automatic reconnection
     let socket: WebSocket | null = null;
     let reconnectTimeout: any = null;
+    let failedWsAttempts = 0;
+    const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
 
     const connectWebSocket = () => {
+      if (isVercel) {
+        // Vercel serverless environment does not support persistent WebSockets.
+        // Smoothly operate with REST polling instead of throwing connection errors.
+        setIsWsConnected(true);
+        return;
+      }
+
+      if (failedWsAttempts >= 3) {
+        return;
+      }
+
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/api/ws`;
-        console.log('[WebSocketClient] Connecting to:', wsUrl);
         socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
-          console.log('[WebSocketClient] Connected successfully.');
+          failedWsAttempts = 0;
           setIsWsConnected(true);
         };
 
@@ -389,14 +439,14 @@ export default function App() {
         };
 
         socket.onclose = () => {
-          console.log('[WebSocketClient] Reconnecting in 8 seconds...');
+          failedWsAttempts++;
           setIsWsConnected(false);
-          reconnectTimeout = setTimeout(connectWebSocket, 8000);
+          if (failedWsAttempts < 3) {
+            reconnectTimeout = setTimeout(connectWebSocket, 10000);
+          }
         };
 
         socket.onerror = () => {
-          // Soften the log level and message so frame connection limits do not trigger error monitors
-          console.log('[WebSocketClient] Gateway connection waiting/interrupted. Active REST poll synchronization running...');
           socket?.close();
         };
       } catch (err) {

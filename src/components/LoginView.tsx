@@ -18,14 +18,98 @@ import {
 import { RegisteredUser } from './ActivationChatBot.js';
 import { getUserDisplayName } from '../utils/userProfileHelper';
 
+const isCreateAccountUrl = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = (window.location.pathname || '').toLowerCase();
+  const hash = (window.location.hash || '').toLowerCase();
+  const search = (window.location.search || '').toLowerCase();
+  return (
+    path.includes('create-account') ||
+    path.includes('createaccount') ||
+    hash.includes('create-account') ||
+    hash.includes('createaccount') ||
+    search.includes('create-account') ||
+    search.includes('createaccount') ||
+    search.includes('action=create') ||
+    search.includes('mode=create')
+  );
+};
+
+const isRegisterUrl = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = (window.location.pathname || '').toLowerCase();
+  const hash = (window.location.hash || '').toLowerCase();
+  const search = (window.location.search || '').toLowerCase();
+  return (
+    path.includes('register') ||
+    path.includes('signup') ||
+    hash.includes('register') ||
+    hash.includes('signup') ||
+    search.includes('register') ||
+    search.includes('signup') ||
+    search.includes('action=register') ||
+    search.includes('mode=register')
+  );
+};
+
 interface LoginViewProps {
   onLoginSuccess: (username: string) => void;
   darkMode?: boolean;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [showCreateAccountView, setShowCreateAccountView] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(() => !isCreateAccountUrl() && isRegisterUrl());
+  const [showCreateAccountView, setShowCreateAccountView] = useState(() => isCreateAccountUrl());
+  
+  // URL routing synchronization
+  useEffect(() => {
+    const handleUrlChange = () => {
+      if (isCreateAccountUrl()) {
+        setShowCreateAccountView(true);
+        setIsRegisterMode(false);
+      } else if (isRegisterUrl()) {
+        setShowCreateAccountView(false);
+        setIsRegisterMode(true);
+      }
+    };
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
+
+  const openCreateAccount = () => {
+    setShowCreateAccountView(true);
+    setIsRegisterMode(false);
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/#create-account');
+    }
+  };
+
+  const closeCreateAccount = () => {
+    setShowCreateAccountView(false);
+    setIsRegisterMode(false);
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/#login');
+    }
+  };
+
+  const openRegisterMode = () => {
+    setShowCreateAccountView(false);
+    setIsRegisterMode(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/#register');
+    }
+  };
   
   // Login fields
   const [identifier, setIdentifier] = useState('');
@@ -489,13 +573,27 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 </p>
               </div>
 
-              <div className="w-full h-[1px] bg-slate-800/70 my-5" />
+              <div className="w-full h-[1px] bg-slate-800/70 my-4" />
+
+              {/* Direct Registration Form Option */}
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <span className="text-[11px] text-slate-400">Prefer instant self-registration?</span>
+                <button
+                  type="button"
+                  onClick={openRegisterMode}
+                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Open Direct Registration Form &rarr;</span>
+                </button>
+              </div>
+
+              <div className="w-full h-[1px] bg-slate-800/70 my-4" />
 
               {/* Back to Login Button */}
               <div className="flex flex-col items-center justify-center gap-4">
                 <button
                   type="button"
-                  onClick={() => setShowCreateAccountView(false)}
+                  onClick={closeCreateAccount}
                   className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>← Back to Login</span>
@@ -517,10 +615,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           {/* Dynamic Header */}
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-white tracking-tight">
-              Welcome Back
+              {isRegisterMode ? 'Create New Account' : 'Welcome Back'}
             </h2>
             <p className="text-xs text-slate-400 mt-1.5">
-              Sign in to continue
+              {isRegisterMode 
+                ? 'Submit your information for immediate admin activation' 
+                : 'Sign in to access your secure SMS portal'}
             </p>
           </div>
 
@@ -790,14 +890,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
           {/* Reserved slot for custom options */}
           <div className="mt-6 pt-5 border-t border-slate-800/60 text-center flex items-center justify-center gap-1.5">
-            <span className="text-xs text-slate-400 font-medium">Don't have an account?</span>
-            <button
-              type="button"
-              onClick={() => setShowCreateAccountView(true)}
-              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition-colors cursor-pointer"
-            >
-              Create an Account
-            </button>
+            {isRegisterMode ? (
+              <>
+                <span className="text-xs text-slate-400 font-medium">Already have an account?</span>
+                <button
+                  type="button"
+                  onClick={closeCreateAccount}
+                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
+                >
+                  Sign In
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-xs text-slate-400 font-medium">Don't have an account?</span>
+                <button
+                  type="button"
+                  onClick={openCreateAccount}
+                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition-colors cursor-pointer"
+                >
+                  Create an Account
+                </button>
+              </>
+            )}
           </div>
         </motion.div>
       )}

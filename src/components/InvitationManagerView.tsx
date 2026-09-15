@@ -19,7 +19,9 @@ import {
   AlertTriangle,
   X,
   UserCheck,
-  UserX
+  UserX,
+  Globe,
+  Edit3
 } from 'lucide-react';
 
 interface PendingUserItem {
@@ -62,13 +64,41 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
   const [role, setRole] = useState<'User' | 'VIP' | 'Sub-Admin'>('User');
   const [balance, setBalance] = useState('50.00');
   const [inviter, setInviter] = useState('VoltxSMS Support');
-  const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
-    const saved = localStorage.getItem('codeflow_base_url');
-    if (saved && saved.trim() && !saved.includes('run.app') && !saved.includes('localhost') && !saved.includes('ais-')) {
-      return saved.trim();
+  const getInitialBaseUrl = (): string => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('codeflow_base_url');
+      if (saved && saved.trim() && !saved.includes('run.app') && !saved.includes('localhost') && !saved.includes('ais-')) {
+        return saved.trim().replace(/\/+$/, '');
+      }
+      const origin = window.location.origin;
+      if (origin && !origin.includes('run.app') && !origin.includes('localhost') && !origin.includes('ais-')) {
+        return origin.trim().replace(/\/+$/, '');
+      }
     }
     return 'https://codeflowsms.vercel.app';
-  });
+  };
+
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>(getInitialBaseUrl);
+  const [editingBaseUrl, setEditingBaseUrl] = useState(false);
+  const [tempBaseUrl, setTempBaseUrl] = useState('');
+  const [copiedLinkType, setCopiedLinkType] = useState<string | null>(null);
+
+  const handleCopyText = (text: string, type: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLinkType(type);
+    showToast(`Copied ${type} to clipboard!`);
+    setTimeout(() => setCopiedLinkType(null), 2500);
+  };
+
+  const saveBaseUrl = (newUrl: string) => {
+    const clean = newUrl.trim().replace(/\/+$/, '');
+    if (clean) {
+      setCustomBaseUrl(clean);
+      localStorage.setItem('codeflow_base_url', clean);
+      showToast('Domain configuration updated!');
+    }
+    setEditingBaseUrl(false);
+  };
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -372,6 +402,175 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Refresh Status</span>
         </button>
+      </div>
+
+      {/* SECTION: Universal Production Sharing Links Hub (24/7 Availability across all Browsers & Networks) */}
+      <div className="p-6 rounded-3xl bg-slate-900/95 border border-indigo-500/30 shadow-2xl space-y-5">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-950/80 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-base font-black text-white flex items-center gap-2">
+                <span>সার্বজনীন লাইভ লিংক (Universal 24/7 Production Links)</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-black uppercase">
+                  ACTIVE
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                এই লিংক দুটি যেকোনো ব্রাউজারে (Chrome, Safari, Edge, Firefox), মোবাইল ডাটা, ওয়াইফাই বা ভিপিএন-এ রাত-দিন ২৪ ঘন্টা তাত্ক্ষণিকভাবে লোড হবে।
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!editingBaseUrl ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTempBaseUrl(customBaseUrl);
+                  setEditingBaseUrl(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition cursor-pointer"
+                title="Change production base URL"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Domain: <strong className="text-white font-mono">{customBaseUrl.replace(/^https?:\/\//, '')}</strong></span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={tempBaseUrl}
+                  onChange={(e) => setTempBaseUrl(e.target.value)}
+                  placeholder="https://your-domain.vercel.app"
+                  className="px-3 py-1.5 rounded-xl bg-slate-950 border border-indigo-500/60 text-white text-xs font-mono w-64 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => saveBaseUrl(tempBaseUrl)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition cursor-pointer"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingBaseUrl(false)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-400 text-xs hover:text-white transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Card 1: Main Website Live Link */}
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-indigo-500/40 transition space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                ১. ওয়েবসাইটের মূল লিংক (Main Website Link)
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-800 text-[10px] font-mono">
+                PUBLIC
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              সরাসরি ওয়েবসাইটে ভিজিট করার জন্য যেকোনো ব্রাউজারে পেস্ট করুন।
+            </p>
+
+            <div className="flex items-center gap-2 bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <input
+                type="text"
+                readOnly
+                value={`${customBaseUrl}/`}
+                className="bg-transparent text-cyan-300 font-mono text-xs w-full focus:outline-none select-all"
+              />
+              <button
+                type="button"
+                onClick={() => handleCopyText(`${customBaseUrl}/`, 'Website Link')}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer"
+              >
+                {copiedLinkType === 'Website Link' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-lime-300" />
+                    <span>কপি হয়েছে!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>কপি লিংক</span>
+                  </>
+                )}
+              </button>
+              <a
+                href={`${customBaseUrl}/`}
+                target="_blank"
+                rel="noreferrer"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+                title="নতুন ট্যাবে ওপেন করুন"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+          </div>
+
+          {/* Card 2: Direct Account Creation Link for Emails */}
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-400 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                ২. অ্যাকাউন্ট ক্রিয়েট লিংক (User Email Registration Link)
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-mono">
+                CREATE-ACCOUNT
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              ইউজারদের মেইলে এই লিংকটি পাঠান। লিংকে ক্লিক করার সাথে সাথে সরাসরি একাউন্ট খোলার স্ক্রিন চলে আসবে।
+            </p>
+
+            <div className="flex items-center gap-2 bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <input
+                type="text"
+                readOnly
+                value={`${customBaseUrl}/#create-account`}
+                className="bg-transparent text-emerald-300 font-mono text-xs w-full focus:outline-none select-all"
+              />
+              <button
+                type="button"
+                onClick={() => handleCopyText(`${customBaseUrl}/#create-account`, 'Create Account Link')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer"
+              >
+                {copiedLinkType === 'Create Account Link' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-white" />
+                    <span>কপি হয়েছে!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>কপি লিংক</span>
+                  </>
+                )}
+              </button>
+              <a
+                href={`${customBaseUrl}/#create-account`}
+                target="_blank"
+                rel="noreferrer"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+                title="নতুন ট্যাবে ওপেন করুন"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* SMTP Brevo Security Alert Notice */}

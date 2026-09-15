@@ -2312,9 +2312,15 @@ function getCountryByPhoneNumber(phone: string): string {
       const expiresAt = now + FIFTEEN_MINUTES_MS;
 
       let origin = (hostUrl || '').trim().replace(/\/+$/, '');
-      // If no host provided or if it contains internal dev container domains, force clean Vercel / custom production domain
+      // If no host provided or if it contains internal dev container domains, check headers or use clean Vercel domain
       if (!origin || origin.includes('run.app') || origin.includes('localhost') || origin.includes('ais-')) {
-        origin = 'https://codeflowsms.vercel.app';
+        const headerHost = (req.headers['x-forwarded-host'] || req.headers.host || '') as string;
+        if (headerHost && !headerHost.includes('localhost') && !headerHost.includes('run.app') && !headerHost.includes('ais-')) {
+          const proto = req.headers['x-forwarded-proto'] || 'https';
+          origin = `${proto}://${headerHost}`.replace(/\/+$/, '');
+        } else {
+          origin = 'https://codeflowsms.vercel.app';
+        }
       }
       const link = `${origin}/#onboarding?token=${token}`;
 
