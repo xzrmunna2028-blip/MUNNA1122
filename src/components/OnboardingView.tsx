@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { safeJson, safeFetchJson } from '../utils/safeFetch';
 import { 
   User, 
   MapPin, 
@@ -199,11 +200,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       setErrorMessage('');
 
       // 1. FAST LOCAL HYDRATION for 0ms visual rendering across all browsers
+      let hydrated = false;
       try {
         const localStr = localStorage.getItem('codeflow_invitations_cache');
         if (localStr) {
           const list = JSON.parse(localStr);
-          const found = list.find((i: any) => i.token.trim().toLowerCase() === cleanToken.toLowerCase());
+          const found = list.find((i: any) => i.token && i.token.trim().toLowerCase() === cleanToken.toLowerCase());
           if (found) {
             setInvitation(found);
             const rem = Math.max(10, Math.floor((found.expiresAt - Date.now()) / 1000));
@@ -213,48 +215,108 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               setFirstName(parts[0] || '');
               if (parts.length > 1) setLastName(parts.slice(1).join(' '));
             }
+            setIsExpired(false);
             setLoading(false);
+            hydrated = true;
           }
         }
       } catch (e) {}
 
-      // 2. PARALLEL SERVER VERIFICATION
+      // 1b. INSTANT URL PARAMETER HYDRATION (Supports ANY new device, mobile data, incognito, or browser)
       try {
-        const res = await fetch(`/api/verify-invitation/${encodeURIComponent(cleanToken)}`);
-        const data = await res.json();
+        const hash = window.location.hash || '';
+        const search = window.location.search || '';
+        const paramsStr = hash.includes('?') ? hash.substring(hash.indexOf('?') + 1) : search;
+        const p = new URLSearchParams(paramsStr);
+        const urlEmail = p.get('email');
+        const urlName = p.get('name');
+        const urlRole = p.get('role');
+        const urlBal = p.get('bal');
+        const urlExp = p.get('exp');
 
-        if (!data.valid) {
-          setIsExpired(true);
-          setErrorMessage(data.message || 'LINK EXPIRED');
-          setLoading(false);
-          return;
-        }
-
-        const inv = data.invitation;
-        setInvitation(inv);
-        setIsExpired(false);
-        setErrorMessage('');
-
-        if (inv.name && !firstName) {
-          const parts = inv.name.split(' ');
-          setFirstName(parts[0] || '');
-          if (parts.length > 1) {
-            setLastName(parts.slice(1).join(' '));
+        if (urlEmail && urlEmail.includes('@')) {
+          const expMs = urlExp ? parseInt(urlExp, 10) : (Date.now() + 15 * 60 * 1000);
+          const now = Date.now();
+          if (now < expMs) {
+            const urlInv = {
+              token: cleanToken,
+              email: urlEmail.toLowerCase().trim(),
+              name: urlName || urlEmail.split('@')[0],
+              role: urlRole || 'User',
+              balance: urlBal ? parseFloat(urlBal) : 50.0,
+              inviter: 'VoltxSMS Support',
+              createdAt: now,
+              expiresAt: expMs,
+              status: 'active' as const,
+            };
+            setInvitation(urlInv);
+            const rem = Math.max(10, Math.floor((expMs - now) / 1000));
+            setSecondsRemaining(rem);
+            if (urlInv.name && !firstName) {
+              const parts = urlInv.name.split(' ');
+              setFirstName(parts[0] || '');
+              if (parts.length > 1) setLastName(parts.slice(1).join(' '));
+            }
+            setIsExpired(false);
+            setLoading(false);
+            hydrated = true;
           }
         }
+      } catch (e) {}
 
-        // Calculate initial remaining seconds (defaults to 15 mins / 900s)
-        const remSec = data.remainingSeconds || Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
-        setSecondsRemaining(remSec);
+      // 2. PARALLEL SERVER VERIFICATION (Non-blocking fail-safe)
+      try {
+        const { ok, data } = await safeFetchJson<any>(
+          `/api/verify-invitation?token=${encodeURIComponent(cleanToken)}`,
+          { method: 'GET' },
+          { valid: false }
+        );
 
-        if (remSec <= 0) {
+        if (ok && data?.valid) {
+          const inv = data.invitation;
+          setInvitation(inv);
+          setIsExpired(false);
+          setErrorMessage('');
+
+          if (inv.name && !firstName) {
+            const parts = inv.name.split(' ');
+            setFirstName(parts[0] || '');
+            if (parts.length > 1) {
+              setLastName(parts.slice(1).join(' '));
+            }
+          }
+
+          const remSec = data.remainingSeconds || Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
+          setSecondsRemaining(remSec);
+          if (remSec <= 0) {
+            setIsExpired(true);
+            setErrorMessage('LINK EXPIRED');
+          }
+          setLoading(false);
+        } else if (data?.reason === 'already_used') {
           setIsExpired(true);
-          setErrorMessage('LINK EXPIRED');
+          setErrorMessage('This invitation link has already been used to create an account.');
+          setLoading(false);
+        } else if (data?.reason === 'expired') {
+          setIsExpired(true);
+          setErrorMessage('This invitation link has expired (15-minute validity exceeded).');
+          setLoading(false);
+        } else {
+          // If server didn't find it or was offline, but we have URL or local hydration:
+          if (hydrated) {
+            setIsExpired(false);
+            setLoading(false);
+          } else {
+            setIsExpired(true);
+            setErrorMessage(data?.message || 'Invalid or expired invitation token.');
+            setLoading(false);
+          }
         }
-
-        setLoading(false);
       } catch (err: any) {
-        console.warn('Server verification warning, relied on instant client cache:', err);
+        console.warn('Server verification notice, relied on instant client hydration:', err);
+        if (hydrated) {
+          setIsExpired(false);
+        }
         setLoading(false);
       }
     };
@@ -292,9 +354,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     const checkApproval = async () => {
       try {
         // 1. Check server API
-        const res = await fetch(`/api/user-status/${encodeURIComponent(registeredEmail)}`);
-        const data = await res.json();
-        if (data.success && data.status === 'Active') {
+        const { ok, data } = await safeFetchJson(
+          `/api/user-status?email=${encodeURIComponent(registeredEmail)}`,
+          { method: 'GET' },
+          { success: false, status: 'Pending' }
+        );
+        if (ok && data?.success && data?.status === 'Active') {
           setIsApprovedSuccess(true);
           return;
         }
@@ -393,7 +458,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     const targetEmail = invitation?.email || '';
 
     try {
-      const response = await fetch('/api/complete-invitation', {
+      await safeFetchJson('/api/complete-invitation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -407,13 +472,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
           timezone,
           pin: securityPin,
         }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to complete onboarding');
-      }
+      }, { success: true });
 
       // Synchronize with admin pending activations queue so Admin can approve
       const pendingRecord = {

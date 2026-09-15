@@ -6,11 +6,15 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "source": "/api/verify-invitation/(.*)",
+      "destination": "/api/verify-invitation?token=$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/api/user-status/(.*)",
+      "destination": "/api/user-status?email=$1"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],

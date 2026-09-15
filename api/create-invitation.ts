@@ -5,25 +5,35 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    const { email, name, role, balance, inviter, hostUrl } = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+
+    const { email, name, role, balance, inviter, hostUrl } = body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanName = String(name || cleanEmail.split('@')[0] || 'User').trim();
 
     if (!cleanEmail) {
-      return res.status(400).json({ error: 'Email is required' });
+      return res.status(400).json({ success: false, error: 'Email is required' });
     }
 
-    const token = crypto.randomBytes(16).toString('hex');
+    const token = 'inv_' + crypto.randomBytes(12).toString('hex');
     const now = Date.now();
     const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
     const expiresAt = now + FIFTEEN_MINUTES_MS;
@@ -39,14 +49,16 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const link = `${origin}/#onboarding?token=${token}`;
+    const roleVal = role || 'User';
+    const balVal = typeof balance === 'number' ? balance : parseFloat(balance) || 50.0;
+    const link = `${origin}/#onboarding?token=${token}&email=${encodeURIComponent(cleanEmail)}&name=${encodeURIComponent(cleanName)}&role=${encodeURIComponent(roleVal)}&bal=${balVal}&exp=${expiresAt}`;
 
     const newInvite = {
       token,
       email: cleanEmail,
       name: cleanName,
-      role: role || 'User',
-      balance: typeof balance === 'number' ? balance : parseFloat(balance) || 50.0,
+      role: roleVal,
+      balance: balVal,
       inviter: inviter || 'VoltxSMS Support',
       createdAt: now,
       expiresAt,
@@ -62,6 +74,6 @@ export default async function handler(req: any, res: any) {
       link
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Internal server error' });
+    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 }

@@ -10,7 +10,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const email = String(req.query?.email || '').trim().toLowerCase();
+    let email = String(req.query?.email || '').trim().toLowerCase();
+    if (!email && req.url) {
+      const parsed = new URL(req.url, 'http://localhost');
+      email = String(parsed.searchParams.get('email') || '').trim().toLowerCase();
+      if (!email) {
+        const parts = parsed.pathname.split('/');
+        const lastPart = parts[parts.length - 1] || '';
+        if (lastPart && lastPart !== 'user-status') {
+          email = decodeURIComponent(lastPart).trim().toLowerCase();
+        }
+      }
+    }
     if (!email) {
       return res.status(400).json({ error: 'Email parameter is required' });
     }
