@@ -159,21 +159,8 @@ export const SmsRecordsView: React.FC = () => {
     };
   };
 
-  const loadAllRecords = async () => {
-    try {
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          const customItems = (data.logs as SmsLog[]).map(convertCustomLog);
-          setRecords(customItems);
-          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
-          return;
-        }
-      }
-    } catch (e) {}
-
-    const existing = localStorage.getItem('real_sms_logs');
+  const loadAllRecords = () => {
+    const existing = localStorage.getItem('user_sms_logs');
     let customItems: SmsRecordItem[] = [];
     if (existing) {
       try {
@@ -183,18 +170,18 @@ export const SmsRecordsView: React.FC = () => {
         // ignore
       }
     }
-    setRecords([...customItems, ...preseededRecords]);
+    setRecords(customItems);
   };
 
   useEffect(() => {
     loadAllRecords();
     window.addEventListener('storage', loadAllRecords);
+    window.addEventListener('user_sms_updated', loadAllRecords);
     window.addEventListener('real_sms_updated', loadAllRecords);
-    const interval = setInterval(loadAllRecords, 3000);
     return () => {
       window.removeEventListener('storage', loadAllRecords);
+      window.removeEventListener('user_sms_updated', loadAllRecords);
       window.removeEventListener('real_sms_updated', loadAllRecords);
-      clearInterval(interval);
     };
   }, []);
 

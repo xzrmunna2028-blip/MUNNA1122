@@ -63,26 +63,9 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  // Sync with real-time logs in backend API and localStorage
-  const loadLogs = async () => {
-    try {
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          setLiveLogs(data.logs.map((l: any) => ({ ...l, cost: l.cost || '0.0096 USD' })));
-          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
-          if (data.last_updated) {
-            setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
-          }
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('Backend /api/active-sms fetch failed, checking local cache:', e);
-    }
-
-    const existing = localStorage.getItem('real_sms_logs');
+  // Sync with real-time logs in user_sms_logs (user personal panel)
+  const loadLogs = () => {
+    const existing = localStorage.getItem('user_sms_logs');
     if (existing) {
       try {
         const parsed: SmsLog[] = JSON.parse(existing);
@@ -97,7 +80,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     setIsApiSyncing(true);
     try {
       await fetch('/api/trigger-sync', { method: 'POST' });
-      await loadLogs();
+      loadLogs();
     } catch (e) {
       console.error('IPRN API trigger-sync error:', e);
     } finally {
@@ -108,21 +91,20 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   useEffect(() => {
     loadLogs();
     const handleSync = () => loadLogs();
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('user_sms_updated', handleSync);
     window.addEventListener('real_sms_updated', handleSync);
-    
-    // Auto-poll live active SMS feed every 3 seconds
-    const interval = setInterval(() => {
-      loadLogs();
-    }, 3000);
 
     return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('user_sms_updated', handleSync);
       window.removeEventListener('real_sms_updated', handleSync);
-      clearInterval(interval);
     };
   }, []);
 
   const handleClear = () => {
-    localStorage.setItem('real_sms_logs', JSON.stringify([]));
+    localStorage.setItem('user_sms_logs', JSON.stringify([]));
+    window.dispatchEvent(new Event('user_sms_updated'));
     window.dispatchEvent(new Event('real_sms_updated'));
   };
 

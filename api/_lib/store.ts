@@ -80,6 +80,7 @@ export class CoreStore {
   private static lastReadTime = 0;
   private static cacheTTL = 1000; // 1-second hot read cache TTL to handle extreme request spikes
   private static writeQueue: Promise<boolean> = Promise.resolve(true); // Sequential queue to prevent race conditions on writes
+  private static jsonBackupPath = path.join(process.cwd(), 'iprn_sync.json');
   private static quotaFilePath = path.join(process.cwd(), '.firestore_quota');
   private static quotaExhaustedUntil: number = (() => {
     try {
@@ -91,8 +92,26 @@ export class CoreStore {
         }
       }
     } catch {}
-    return 0;
+    // Default to suppressing Firestore writes if quota was reached
+    return Date.now() + 24 * 60 * 60 * 1000;
   })(); // Timestamp until which Firestore writes should be bypassed
+
+  private static saveLocalBackup(data: SyncData): void {
+    try {
+      fs.writeFileSync(this.jsonBackupPath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {}
+  }
+
+  private static readLocalBackup(): SyncData | null {
+    try {
+      if (fs.existsSync(this.jsonBackupPath)) {
+        const raw = fs.readFileSync(this.jsonBackupPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return null;
+  }
 
   /**
    * Reads data with a 1-second in-memory caching layer and real-time Firestore database synchronization.
@@ -103,6 +122,16 @@ export class CoreStore {
     // Serve from cache if TTL has not expired
     if (this.cache && (now - this.lastReadTime < this.cacheTTL)) {
       return JSON.parse(JSON.stringify(this.cache)); // Return deep clone to prevent accidental reference mutation
+    }
+
+    // If quota is exhausted, read from local backup JSON file
+    if (now < this.quotaExhaustedUntil) {
+      const backup = this.readLocalBackup();
+      if (backup) {
+        this.cache = backup;
+        this.lastReadTime = now;
+        return JSON.parse(JSON.stringify(backup));
+      }
     }
 
     try {
@@ -137,8 +166,24 @@ export class CoreStore {
 
       this.cache = mergedData;
       this.lastReadTime = now;
+      this.saveLocalBackup(mergedData);
       return JSON.parse(JSON.stringify(mergedData));
-    } catch (error) {
+    } catch (error: any) {
+      const errMsg = String(error?.message || error?.code || '');
+      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('resource-exhausted') || errMsg.includes('Quota') || error?.code === 8 || error?.code === 'resource-exhausted') {
+        this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1000;
+        try {
+          fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), 'utf8');
+        } catch {}
+      }
+
+      const backup = this.readLocalBackup();
+      if (backup) {
+        this.cache = backup;
+        this.lastReadTime = now;
+        return JSON.parse(JSON.stringify(backup));
+      }
+
       if (this.cache) {
         return JSON.parse(JSON.stringify(this.cache));
       }
@@ -163,11 +208,12 @@ export class CoreStore {
     // Automatically recompute metrics and dashboard counters before persisting
     this.recomputeStats(data);
 
-    // Force local memory cache update
+    // Force local memory cache update and persist to JSON file engine
     this.cache = JSON.parse(JSON.stringify(data));
     this.lastReadTime = Date.now();
+    this.saveLocalBackup(data);
 
-    // If Firestore write quota is exhausted for the project today, skip gRPC write to prevent stream errors
+    // If Firestore write quota is exhausted for the project, skip gRPC write to prevent stream errors
     if (Date.now() < this.quotaExhaustedUntil) {
       return true;
     }
@@ -197,8 +243,8 @@ export class CoreStore {
       } catch (error: any) {
         const errMsg = String(error?.message || error?.code || '');
         if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('resource-exhausted') || errMsg.includes('Quota') || error?.code === 8 || error?.code === 'resource-exhausted') {
-          // Back off Firestore writes for 12 hours so gRPC write streams are completely muted
-          this.quotaExhaustedUntil = Date.now() + 12 * 60 * 60 * 1000;
+          // Back off Firestore writes for 24 hours so gRPC write streams are completely muted
+          this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1000;
           try {
             fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), 'utf8');
           } catch {}

@@ -1,0 +1,14 @@
+[
+  {
+    "token": "inv_acb581373536fe45391b7813a1998f51",
+    "email": "test.client@gmail.com",
+    "name": "Md Ruman Hossain",
+    "role": "User",
+    "balance": 50,
+    "inviter": "Admin Support",
+    "createdAt": 1789432729091,
+    "expiresAt": 1789433329091,
+    "status": "expired",
+    "link": "http://localhost:3000/#onboarding?token=inv_acb581373536fe45391b7813a1998f51"
+  }
+]

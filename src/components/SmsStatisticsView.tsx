@@ -174,25 +174,8 @@ export const SmsStatisticsView: React.FC = () => {
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  const fetchStatsFromApi = async () => {
-    try {
-      const res = await fetch('/api/statistics');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          setRealSmsLogs(data.logs);
-          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
-          if (data.last_updated) {
-            setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
-          }
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to fetch statistics from backend API:', e);
-    }
-
-    const existing = localStorage.getItem('real_sms_logs');
+  const fetchStatsFromApi = () => {
+    const existing = localStorage.getItem('user_sms_logs');
     if (existing) {
       try {
         setRealSmsLogs(JSON.parse(existing));
@@ -221,17 +204,13 @@ export const SmsStatisticsView: React.FC = () => {
 
     const handleSync = () => fetchStatsFromApi();
     window.addEventListener('storage', handleSync);
+    window.addEventListener('user_sms_updated', handleSync);
     window.addEventListener('real_sms_updated', handleSync);
-    
-    // Auto-poll live statistics every 3 seconds
-    const interval = setInterval(() => {
-      fetchStatsFromApi();
-    }, 3000);
 
     return () => {
       window.removeEventListener('storage', handleSync);
+      window.removeEventListener('user_sms_updated', handleSync);
       window.removeEventListener('real_sms_updated', handleSync);
-      clearInterval(interval);
     };
   }, []);
 

@@ -32,6 +32,283 @@ interface SmsLog {
   otp?: string;
 }
 
+interface CountryData {
+  name: string;
+  code: string;
+  emoji: string;
+}
+
+const prefixToCountryMap: { [key: string]: CountryData } = {
+  '1': { name: 'United States', code: 'US', emoji: '🇺🇸' },
+  '77': { name: 'Kazakhstan', code: 'KZ', emoji: '🇰🇿' },
+  '76': { name: 'Kazakhstan', code: 'KZ', emoji: '🇰🇿' },
+  '70': { name: 'Kazakhstan', code: 'KZ', emoji: '🇰🇿' },
+  '74': { name: 'Kazakhstan', code: 'KZ', emoji: '🇰🇿' },
+  '78': { name: 'Kazakhstan', code: 'KZ', emoji: '🇰🇿' },
+  '7': { name: 'Russia', code: 'RU', emoji: '🇷🇺' },
+  '20': { name: 'Egypt', code: 'EG', emoji: '🇪🇬' },
+  '27': { name: 'South Africa', code: 'ZA', emoji: '🇿🇦' },
+  '30': { name: 'Greece', code: 'GR', emoji: '🇬🇷' },
+  '31': { name: 'Netherlands', code: 'NL', emoji: '🇳🇱' },
+  '32': { name: 'Belgium', code: 'BE', emoji: '🇧🇪' },
+  '33': { name: 'France', code: 'FR', emoji: '🇫🇷' },
+  '34': { name: 'Spain', code: 'ES', emoji: '🇪🇸' },
+  '36': { name: 'Hungary', code: 'HU', emoji: '🇭🇺' },
+  '39': { name: 'Italy', code: 'IT', emoji: '🇮🇹' },
+  '40': { name: 'Romania', code: 'RO', emoji: '🇷🇴' },
+  '41': { name: 'Switzerland', code: 'CH', emoji: '🇨🇭' },
+  '43': { name: 'Austria', code: 'AT', emoji: '🇦🇹' },
+  '44': { name: 'United Kingdom', code: 'GB', emoji: '🇬🇧' },
+  '45': { name: 'Denmark', code: 'DK', emoji: '🇩🇰' },
+  '46': { name: 'Sweden', code: 'SE', emoji: '🇸🇪' },
+  '47': { name: 'Norway', code: 'NO', emoji: '🇳🇴' },
+  '48': { name: 'Poland', code: 'PL', emoji: '🇵🇱' },
+  '49': { name: 'Germany', code: 'DE', emoji: '🇩🇪' },
+  '51': { name: 'Peru', code: 'PE', emoji: '🇵🇪' },
+  '52': { name: 'Mexico', code: 'MX', emoji: '🇲🇽' },
+  '53': { name: 'Cuba', code: 'CU', emoji: '🇨🇺' },
+  '54': { name: 'Argentina', code: 'AR', emoji: '🇦🇷' },
+  '55': { name: 'Brazil', code: 'BR', emoji: '🇧🇷' },
+  '56': { name: 'Chile', code: 'CL', emoji: '🇨🇱' },
+  '57': { name: 'Colombia', code: 'CO', emoji: '🇨🇴' },
+  '58': { name: 'Venezuela', code: 'VE', emoji: '🇻🇪' },
+  '60': { name: 'Malaysia', code: 'MY', emoji: '🇲🇾' },
+  '61': { name: 'Australia', code: 'AU', emoji: '🇦🇺' },
+  '62': { name: 'Indonesia', code: 'ID', emoji: '🇮🇩' },
+  '63': { name: 'Philippines', code: 'PH', emoji: '🇵🇭' },
+  '64': { name: 'New Zealand', code: 'NZ', emoji: '🇳🇿' },
+  '65': { name: 'Singapore', code: 'SG', emoji: '🇸🇬' },
+  '66': { name: 'Thailand', code: 'TH', emoji: '🇹🇭' },
+  '81': { name: 'Japan', code: 'JP', emoji: '🇯🇵' },
+  '82': { name: 'South Korea', code: 'KR', emoji: '🇰🇷' },
+  '84': { name: 'Vietnam', code: 'VN', emoji: '🇻🇳' },
+  '86': { name: 'China', code: 'CN', emoji: '🇨🇳' },
+  '90': { name: 'Turkey', code: 'TR', emoji: '🇹🇷' },
+  '91': { name: 'India', code: 'IN', emoji: '🇮🇳' },
+  '92': { name: 'Pakistan', code: 'PK', emoji: '🇵🇰' },
+  '93': { name: 'Afghanistan', code: 'AF', emoji: '🇦🇫' },
+  '94': { name: 'Sri Lanka', code: 'LK', emoji: '🇱🇰' },
+  '95': { name: 'Myanmar', code: 'MM', emoji: '🇲🇲' },
+  '98': { name: 'Iran', code: 'IR', emoji: '🇮🇷' },
+  '212': { name: 'Morocco', code: 'MA', emoji: '🇲🇦' },
+  '213': { name: 'Algeria', code: 'DZ', emoji: '🇩🇿' },
+  '216': { name: 'Tunisia', code: 'TN', emoji: '🇹🇳' },
+  '218': { name: 'Libya', code: 'LY', emoji: '🇱🇾' },
+  '220': { name: 'Gambia', code: 'GM', emoji: '🇬🇲' },
+  '221': { name: 'Senegal', code: 'SN', emoji: '🇸🇳' },
+  '222': { name: 'Mauritania', code: 'MR', emoji: '🇲🇷' },
+  '223': { name: 'Mali', code: 'ML', emoji: '🇲🇱' },
+  '224': { name: 'Guinea', code: 'GN', emoji: '🇬🇳' },
+  '225': { name: 'Ivory Coast', code: 'CI', emoji: '🇨🇮' },
+  '226': { name: 'Burkina Faso', code: 'BF', emoji: '🇧🇫' },
+  '227': { name: 'Niger', code: 'NE', emoji: '🇳🇪' },
+  '228': { name: 'Togo', code: 'TG', emoji: '🇹🇬' },
+  '229': { name: 'Benin', code: 'BJ', emoji: '🇧🇯' },
+  '230': { name: 'Mauritius', code: 'MU', emoji: '🇲🇺' },
+  '231': { name: 'Liberia', code: 'LR', emoji: '🇱🇷' },
+  '232': { name: 'Sierra Leone', code: 'SL', emoji: '🇸🇱' },
+  '233': { name: 'Ghana', code: 'GH', emoji: '🇬🇭' },
+  '234': { name: 'Nigeria', code: 'NG', emoji: '🇳🇬' },
+  '240': { name: 'Equatorial Guinea', code: 'GQ', emoji: '🇬🇶' },
+  '241': { name: 'Gabon', code: 'GA', emoji: '🇬🇦' },
+  '242': { name: 'Congo', code: 'CG', emoji: '🇨🇬' },
+  '243': { name: 'DR Congo', code: 'CD', emoji: '🇨🇩' },
+  '244': { name: 'Angola', code: 'AO', emoji: '🇦🇴' },
+  '249': { name: 'Sudan', code: 'SD', emoji: '🇸🇩' },
+  '251': { name: 'Ethiopia', code: 'ET', emoji: '🇪🇹' },
+  '252': { name: 'Somalia', code: 'SO', emoji: '🇸🇴' },
+  '253': { name: 'Djibouti', code: 'DJ', emoji: '🇩🇯' },
+  '254': { name: 'Kenya', code: 'KE', emoji: '🇰🇪' },
+  '255': { name: 'Tanzania', code: 'TZ', emoji: '🇹🇿' },
+  '256': { name: 'Uganda', code: 'UG', emoji: '🇺🇬' },
+  '257': { name: 'Burundi', code: 'BI', emoji: '🇧🇮' },
+  '258': { name: 'Mozambique', code: 'MZ', emoji: '🇲🇿' },
+  '260': { name: 'Zambia', code: 'ZM', emoji: '🇿🇲' },
+  '261': { name: 'Madagascar', code: 'MG', emoji: '🇲🇬' },
+  '263': { name: 'Zimbabwe', code: 'ZW', emoji: '🇿🇼' },
+  '264': { name: 'Namibia', code: 'NA', emoji: '🇳🇦' },
+  '351': { name: 'Portugal', code: 'PT', emoji: '🇵🇹' },
+  '352': { name: 'Luxembourg', code: 'LU', emoji: '🇱🇺' },
+  '353': { name: 'Ireland', code: 'IE', emoji: '🇮🇪' },
+  '354': { name: 'Iceland', code: 'IS', emoji: '🇮🇸' },
+  '355': { name: 'Albania', code: 'AL', emoji: '🇦🇱' },
+  '356': { name: 'Malta', code: 'MT', emoji: '🇲🇹' },
+  '357': { name: 'Cyprus', code: 'CY', emoji: '🇨🇾' },
+  '358': { name: 'Finland', code: 'FI', emoji: '🇫🇮' },
+  '359': { name: 'Bulgaria', code: 'BG', emoji: '🇧🇬' },
+  '370': { name: 'Lithuania', code: 'LT', emoji: '🇱🇹' },
+  '371': { name: 'Latvia', code: 'LV', emoji: '🇱🇻' },
+  '372': { name: 'Estonia', code: 'EE', emoji: '🇪🇪' },
+  '373': { name: 'Moldova', code: 'MD', emoji: '🇲🇩' },
+  '374': { name: 'Armenia', code: 'AM', emoji: '🇦🇲' },
+  '375': { name: 'Belarus', code: 'BY', emoji: '🇧🇾' },
+  '376': { name: 'Andorra', code: 'AD', emoji: '🇦🇩' },
+  '377': { name: 'Monaco', code: 'MC', emoji: '🇲🇨' },
+  '378': { name: 'San Marino', code: 'SM', emoji: '🇸🇲' },
+  '380': { name: 'Ukraine', code: 'UA', emoji: '🇺🇦' },
+  '381': { name: 'Serbia', code: 'RS', emoji: '🇷🇸' },
+  '382': { name: 'Montenegro', code: 'ME', emoji: '🇲🇪' },
+  '385': { name: 'Croatia', code: 'HR', emoji: '🇭🇷' },
+  '386': { name: 'Slovenia', code: 'SI', emoji: '🇸🇮' },
+  '387': { name: 'Bosnia', code: 'BA', emoji: '🇧🇦' },
+  '389': { name: 'North Macedonia', code: 'MK', emoji: '🇲🇰' },
+  '420': { name: 'Czech Republic', code: 'CZ', emoji: '🇨🇿' },
+  '421': { name: 'Slovakia', code: 'SK', emoji: '🇸🇰' },
+  '423': { name: 'Liechtenstein', code: 'LI', emoji: '🇱🇮' },
+  '501': { name: 'Belize', code: 'BZ', emoji: '🇧🇿' },
+  '502': { name: 'Guatemala', code: 'GT', emoji: '🇬🇹' },
+  '503': { name: 'El Salvador', code: 'SV', emoji: '🇸🇻' },
+  '504': { name: 'Honduras', code: 'HN', emoji: '🇭🇳' },
+  '505': { name: 'Nicaragua', code: 'NI', emoji: '🇳🇮' },
+  '506': { name: 'Costa Rica', code: 'CR', emoji: '🇨🇷' },
+  '507': { name: 'Panama', code: 'PA', emoji: '🇵🇦' },
+  '509': { name: 'Haiti', code: 'HT', emoji: '🇭🇹' },
+  '590': { name: 'Guadeloupe', code: 'GP', emoji: '🇬🇵' },
+  '591': { name: 'Bolivia', code: 'BO', emoji: '🇧🇴' },
+  '592': { name: 'Guyana', code: 'GY', emoji: '🇬🇾' },
+  '593': { name: 'Ecuador', code: 'EC', emoji: '🇪🇨' },
+  '595': { name: 'Paraguay', code: 'PY', emoji: '🇵🇾' },
+  '597': { name: 'Suriname', code: 'SR', emoji: '🇸🇷' },
+  '598': { name: 'Uruguay', code: 'UY', emoji: '🇺🇾' },
+  '852': { name: 'Hong Kong', code: 'HK', emoji: '🇭🇰' },
+  '853': { name: 'Macau', code: 'MO', emoji: '🇲🇴' },
+  '855': { name: 'Cambodia', code: 'KH', emoji: '🇰🇭' },
+  '856': { name: 'Laos', code: 'LA', emoji: '🇱🇦' },
+  '880': { name: 'Bangladesh', code: 'BD', emoji: '🇧🇩' },
+  '886': { name: 'Taiwan', code: 'TW', emoji: '🇹🇼' },
+  '960': { name: 'Maldives', code: 'MV', emoji: '🇲🇻' },
+  '961': { name: 'Lebanon', code: 'LB', emoji: '🇱🇧' },
+  '962': { name: 'Jordan', code: 'JO', emoji: '🇯🇴' },
+  '963': { name: 'Syria', code: 'SY', emoji: '🇸🇾' },
+  '964': { name: 'Iraq', code: 'IQ', emoji: '🇮🇶' },
+  '965': { name: 'Kuwait', code: 'KW', emoji: '🇰🇼' },
+  '966': { name: 'Saudi Arabia', code: 'SA', emoji: '🇸🇦' },
+  '967': { name: 'Yemen', code: 'YE', emoji: '🇾🇪' },
+  '968': { name: 'Oman', code: 'OM', emoji: '🇴🇲' },
+  '971': { name: 'United Arab Emirates', code: 'AE', emoji: '🇦🇪' },
+  '972': { name: 'Israel', code: 'IL', emoji: '🇮🇱' },
+  '973': { name: 'Bahrain', code: 'BH', emoji: '🇧🇭' },
+  '974': { name: 'Qatar', code: 'QA', emoji: '🇶🇦' },
+  '975': { name: 'Bhutan', code: 'BT', emoji: '🇧🇹' },
+  '976': { name: 'Mongolia', code: 'MN', emoji: '🇲🇳' },
+  '977': { name: 'Nepal', code: 'NP', emoji: '🇳🇵' },
+  '992': { name: 'Tajikistan', code: 'TJ', emoji: '🇹🇯' },
+  '993': { name: 'Turkmenistan', code: 'TM', emoji: '🇹🇲' },
+  '994': { name: 'Azerbaijan', code: 'AZ', emoji: '🇦🇿' },
+  '995': { name: 'Georgia', code: 'GE', emoji: '🇬🇪' },
+  '996': { name: 'Kyrgyzstan', code: 'KG', emoji: '🇰🇬' },
+  '998': { name: 'Uzbekistan', code: 'UZ', emoji: '🇺🇿' }
+};
+
+const getCountryInfoByPhone = (phone: string, fallbackTermination?: string) => {
+  const cleanPhone = (phone || '').replace(/^\+/, '').trim();
+  
+  // 1. Check phone number prefix matching (longest prefix first)
+  for (let len = 4; len >= 1; len--) {
+    if (cleanPhone.length >= len) {
+      const sub = cleanPhone.substring(0, len);
+      if (prefixToCountryMap[sub]) {
+        return prefixToCountryMap[sub];
+      }
+    }
+  }
+
+  // 2. Match country name in fallbackTermination strictly
+  if (fallbackTermination) {
+    const cleanTerm = fallbackTermination.toLowerCase();
+    const sortedCountries = Object.values(prefixToCountryMap).sort((a, b) => b.name.length - a.name.length);
+    for (const data of sortedCountries) {
+      if (cleanTerm.includes(data.name.toLowerCase())) {
+        return data;
+      }
+    }
+
+    // 3. Match country code/prefix from digits in fallbackTermination
+    const m = cleanTerm.match(/\+?(\d{1,4})/);
+    if (m) {
+      const matchPrefix = m[1];
+      for (let len = 4; len >= 1; len--) {
+        if (matchPrefix.length >= len) {
+          const sub = matchPrefix.substring(0, len);
+          if (prefixToCountryMap[sub]) {
+            return prefixToCountryMap[sub];
+          }
+        }
+      }
+    }
+  }
+
+  return { name: fallbackTermination || 'Global Route', code: 'GL', emoji: '🌐' };
+};
+
+const maskPhoneWithAreaCodeAndThreeDigits = (phone: string, fallbackTermination?: string): string => {
+  if (!phone) return '';
+  const cleanPhone = phone.replace(/^\+/, '').trim();
+  
+  // Find the country prefix
+  let matchedPrefix = '';
+  for (let len = 4; len >= 1; len--) {
+    if (cleanPhone.length >= len) {
+      const sub = cleanPhone.substring(0, len);
+      if (prefixToCountryMap[sub]) {
+        matchedPrefix = sub;
+        break;
+      }
+    }
+  }
+
+  // If we couldn't find prefix directly from phone, try finding it using fallbackTermination or a generic regex
+  if (!matchedPrefix && fallbackTermination) {
+    const cleanTerm = fallbackTermination.toLowerCase();
+    for (const prefix of Object.keys(prefixToCountryMap)) {
+      const data = prefixToCountryMap[prefix];
+      if (
+        cleanTerm.includes(data.name.toLowerCase()) || 
+        cleanTerm.includes(prefix) || 
+        cleanTerm.includes(data.code.toLowerCase())
+      ) {
+        matchedPrefix = prefix;
+        break;
+      }
+    }
+  }
+
+  if (!matchedPrefix) {
+    const m = (fallbackTermination || '').match(/\+?(\d+)/);
+    if (m) {
+      const matchPrefix = m[1];
+      for (let len = 4; len >= 1; len--) {
+        if (matchPrefix.length >= len) {
+          const sub = matchPrefix.substring(0, len);
+          if (prefixToCountryMap[sub]) {
+            matchedPrefix = sub;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // If we still don't have a matched prefix, let's assume first 3 digits as prefix or just show first 5 characters
+  if (!matchedPrefix) {
+    if (cleanPhone.length > 6) {
+      return cleanPhone.substring(0, 6) + 'x'.repeat(cleanPhone.length - 6);
+    }
+    return cleanPhone;
+  }
+
+  const prefixLen = matchedPrefix.length;
+  // We want to show: area code (prefix) + 3 numbers (next 3 digits), rest hidden with x's
+  const visibleLen = prefixLen + 3;
+  if (cleanPhone.length <= visibleLen) {
+    return cleanPhone;
+  }
+
+  const visiblePart = cleanPhone.substring(0, visibleLen);
+  const hiddenPart = 'x'.repeat(cleanPhone.length - visibleLen);
+  return visiblePart + hiddenPart;
+};
+
 export const LiveTestSmsView: React.FC = () => {
   // Live controls
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -40,6 +317,7 @@ export const LiveTestSmsView: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
+  const [alwaysRevealOtps, setAlwaysRevealOtps] = useState(true);
 
   // API Key State
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('iprn_api_key') || '');
@@ -142,24 +420,36 @@ export const LiveTestSmsView: React.FC = () => {
     } catch (e) {}
   };
 
-  // Audio tone generator for incoming SMS ping
+  // Audio tone generator for incoming SMS ping (Soft, pleasant standard "Tung" tone)
   const playSmsSound = () => {
     if (!soundEnabled) return;
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      // Soft, clean, natural standard notification tone ("Tung")
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      // Classic smooth gentle "Tung" ping: 880Hz with soft quick decay to 660Hz
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
+
+      // Gentle, quiet volume that sounds comfortable and pleasant
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5 note
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.25);
     } catch {
       // Audio fallback
     }
@@ -354,20 +644,39 @@ export const LiveTestSmsView: React.FC = () => {
   const availableCountries = useMemo(() => {
     const list = new Set<string>(['Algeria', 'Azerbaijan', 'Belarus', 'Benin', 'Bolivia', 'Cambodia', 'Ecuador', 'United Kingdom']);
     liveLogs.forEach(l => {
-      if (l.termination) {
-        const countryName = l.termination.split(' - ')[0].trim();
-        if (countryName) list.add(countryName);
+      const countryInfo = getCountryInfoByPhone(l.number || '', l.termination || '');
+      if (countryInfo && countryInfo.name) {
+        list.add(countryInfo.name);
       }
     });
     return Array.from(list).sort();
   }, [liveLogs]);
 
   // Country Flag Renderer with authentic flag colors matching the panel
-  const renderFlag = (termination: string) => {
-    const term = (termination || '').toLowerCase();
+  const renderFlag = (termination: string, phoneNumber?: string) => {
+    const countryInfo = getCountryInfoByPhone(phoneNumber || '', termination);
+    const code = countryInfo.code;
     
+    // Kazakhstan Flag (Sky blue with yellow sun/ornament)
+    if (code === 'KZ') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#00AFCA] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+          <div className="w-3.5 h-3.5 rounded-full border border-[#FFE000] bg-[#FFE000] flex items-center justify-center">
+            <span className="text-[6px] text-amber-900 font-bold">☀️</span>
+          </div>
+        </div>
+      );
+    }
+    // Morocco Flag (Red background with green star)
+    if (code === 'MA') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#C1272D] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+          <span className="text-xs text-[#006233] font-bold drop-shadow-xs">★</span>
+        </div>
+      );
+    }
     // Belarus Flag (Red top, Green bottom)
-    if (term.includes('belarus')) {
+    if (code === 'BY') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="h-[65%] bg-[#C8313E]" />
@@ -376,7 +685,7 @@ export const LiveTestSmsView: React.FC = () => {
       );
     }
     // Bolivia Flag (Red, Yellow, Green horizontal stripes)
-    if (term.includes('bolivia')) {
+    if (code === 'BO') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="h-1/3 bg-[#D52B1E]" />
@@ -386,7 +695,7 @@ export const LiveTestSmsView: React.FC = () => {
       );
     }
     // Benin Flag (Green vertical left bar, yellow top right, red bottom right)
-    if (term.includes('benin')) {
+    if (code === 'BJ') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="w-[40%] bg-[#008751]" />
@@ -398,7 +707,7 @@ export const LiveTestSmsView: React.FC = () => {
       );
     }
     // Cambodia Flag (Blue, Red with temple, Blue)
-    if (term.includes('cambodia')) {
+    if (code === 'KH') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 relative">
           <div className="h-[25%] bg-[#032EA6]" />
@@ -410,7 +719,7 @@ export const LiveTestSmsView: React.FC = () => {
       );
     }
     // Ecuador Flag (Yellow top 50%, Blue 25%, Red 25%)
-    if (term.includes('ecuador')) {
+    if (code === 'EC') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="h-1/2 bg-[#FFD100]" />
@@ -420,7 +729,7 @@ export const LiveTestSmsView: React.FC = () => {
       );
     }
     // Azerbaijan Flag (Blue, Red, Green horizontal)
-    if (term.includes('azerbaijan')) {
+    if (code === 'AZ') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="h-1/3 bg-[#0092BC]" />
@@ -429,17 +738,19 @@ export const LiveTestSmsView: React.FC = () => {
         </div>
       );
     }
-    // Algeria Flag (Green left, White right)
-    if (term.includes('algeria')) {
+    // Algeria Flag (Green left, White right with crescent)
+    if (code === 'DZ') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
           <div className="w-1/2 bg-[#006233]" />
-          <div className="w-1/2 bg-white" />
+          <div className="w-1/2 bg-white flex items-center justify-start pl-0.5">
+            <span className="text-[9px] text-red-600 font-bold leading-none">🌙</span>
+          </div>
         </div>
       );
     }
-    // United Kingdom (UK)
-    if (term.includes('united kingdom') || term.includes('uk')) {
+    // United Kingdom (GB / UK)
+    if (code === 'GB') {
       return (
         <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#012169] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
           <div className="absolute w-full h-[3px] bg-red-600" />
@@ -447,10 +758,85 @@ export const LiveTestSmsView: React.FC = () => {
         </div>
       );
     }
-    // Default Flag
+    // Sri Lanka Flag (Yellow border with green/orange stripes and maroon lion)
+    if (code === 'LK') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 bg-[#FFBE29] p-0.5">
+          <div className="w-[12%] bg-[#005F4B] h-full mr-[3%]" />
+          <div className="w-[12%] bg-[#E67E22] h-full mr-[3%]" />
+          <div className="flex-1 bg-[#800000] h-full flex items-center justify-center">
+            <span className="text-[8px] leading-none">🦁</span>
+          </div>
+        </div>
+      );
+    }
+    // Mozambique Flag
+    if (code === 'MZ') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+          <div className="h-[30%] bg-[#009739] w-full" />
+          <div className="h-[5%] bg-white w-full" />
+          <div className="h-[30%] bg-[#000000] w-full" />
+          <div className="h-[5%] bg-white w-full" />
+          <div className="h-[30%] bg-[#FED141] w-full" />
+          <div 
+            className="absolute top-0 left-0 h-full bg-[#D11226]" 
+            style={{ 
+              width: '38%', 
+              clipPath: 'polygon(0 0, 100% 50%, 0 100%)' 
+            }} 
+          />
+        </div>
+      );
+    }
+    // Bangladesh Flag (Green with Red circle)
+    if (code === 'BD') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden bg-[#006A4E] relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+          <div className="w-4 h-4 rounded-full bg-[#F42A41]" />
+        </div>
+      );
+    }
+    // India Flag (Saffron, White, Green)
+    if (code === 'IN') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex flex-col shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="h-1/3 bg-[#FF9933]" />
+          <div className="h-1/3 bg-white flex items-center justify-center">
+            <div className="w-1.5 h-1.5 rounded-full border border-[#000080]" />
+          </div>
+          <div className="h-1/3 bg-[#138808]" />
+        </div>
+      );
+    }
+    // France Flag (Blue, White, Red)
+    if (code === 'FR') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden flex shadow-xs shrink-0 border border-slate-200 dark:border-slate-700">
+          <div className="w-1/3 bg-[#002395]" />
+          <div className="w-1/3 bg-white" />
+          <div className="w-1/3 bg-[#ED2939]" />
+        </div>
+      );
+    }
+    // United States / USA Flag
+    if (code === 'US') {
+      return (
+        <div className="w-10 h-7 rounded-xs overflow-hidden bg-red-600 relative shadow-xs shrink-0 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+          <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-[#3C3B6E] flex items-center justify-center text-[5px] text-white">★</div>
+          <div className="h-[14%] bg-white w-full" />
+          <div className="h-[14%] bg-red-600 w-full" />
+          <div className="h-[14%] bg-white w-full" />
+          <div className="h-[14%] bg-red-600 w-full" />
+          <div className="h-[14%] bg-white w-full" />
+          <div className="h-[14%] bg-red-600 w-full" />
+        </div>
+      );
+    }
+    // Default Flag (renders authentic emoji flag)
     return (
-      <div className="w-10 h-7 rounded-xs bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs shadow-xs shrink-0">
-        🌐
+      <div className="w-10 h-7 rounded-xs bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg shadow-xs shrink-0 border border-slate-200/50 dark:border-slate-700/50 select-none">
+        {countryInfo.emoji}
       </div>
     );
   };
@@ -467,6 +853,42 @@ export const LiveTestSmsView: React.FC = () => {
       }
       return next;
     });
+  };
+
+  // Helper to format brand names beautifully
+  const formatBrandName = (sid?: string) => {
+    if (!sid) return 'AUTHMSG';
+    const s = sid.toLowerCase().trim();
+    if (s === 'whatsapp') return 'WhatsApp';
+    if (s === 'telegram') return 'Telegram';
+    if (s === 'google') return 'Google';
+    if (s === 'gmail') return 'Gmail';
+    if (s === 'snapchat') return 'Snapchat';
+    if (s === 'synapse') return 'Synapse';
+    if (s === 'tiktok') return 'TikTok';
+    if (s === 'facebook') return 'Facebook';
+    if (s === 'meta') return 'Meta';
+    if (s === 'apple') return 'Apple';
+    if (s === 'icloud') return 'iCloud';
+    if (s === 'amazon') return 'Amazon';
+    if (s === 'microsoft') return 'Microsoft';
+    if (s === 'binance') return 'Binance';
+    if (s === 'netflix') return 'Netflix';
+    if (s === 'uber') return 'Uber';
+    if (s === 'imo') return 'IMO';
+    if (s === 'instagram') return 'Instagram';
+    if (s === 'twitter') return 'Twitter';
+    if (s === 'viber') return 'Viber';
+    if (s === 'badoo') return 'Badoo';
+    if (s === 'dhl') return 'DHL';
+    if (s === 'santander') return 'Santander';
+    if (s === 'notice') return 'Notice';
+    
+    // Capitalize first letter of each word
+    return sid
+      .split(' ')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
   };
 
   // Render Social Media & Service Brand Logo
@@ -509,40 +931,52 @@ export const LiveTestSmsView: React.FC = () => {
     // Snapchat / Synapse
     if (s.includes('snap') || s.includes('synapse')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-[#FFFC00] text-black flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
-          👻
+        <div className="w-5 h-5 rounded-full bg-[#FFFC00] text-black flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3.5 h-3.5 fill-black" viewBox="0 0 24 24">
+            <path d="M12.035 2.75c-3.125 0-5.188 2.222-5.188 4.78 0 .843.23 1.638.632 2.302-.56.55-1.45.962-2.385.962-.32 0-.61-.067-.886-.184-.188.384.116.892.518 1.1.81.42 1.652.75 2.535.882.1.472-.086.972-.41 1.288-.632.616-1.433.918-2.226.918h-.335c-.2 0-.36.16-.36.36 0 .2.16.36.36.36h.335c1.12 0 2.11-.476 2.73-1.28.692.42 1.488.648 2.348.648s1.656-.228 2.348-.648c.62.804 1.61 1.28 2.73 1.28h.335c.2 0 .36-.16.36-.36 0-.2-.16-.36-.36-.36h-.335c-.793 0-1.594-.302-2.226-.918-.324-.316-.51-.816-.41-1.288.883-.132 1.725-.462 2.535-.882.402-.208.706-.716.518-1.1-.276.117-.566.184-.886.184-.935 0-1.825-.412-2.385-.962.402-.664.632-1.459.632-2.302 0-2.558-2.063-4.78-5.188-4.78z" />
+          </svg>
         </div>
       );
     }
     // TikTok
     if (s.includes('tiktok')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
-          🎵
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+            <path fill="#25F4EE" d="M16.6 5.82a4.34 4.34 0 0 1-3.26-3.26v-.56h-2.5v12.2a2.38 2.38 0 1 1-2.38-2.38c.28 0 .55.05.8.14V9.38a4.88 4.88 0 0 0-.8-.07 4.88 4.88 0 1 0 4.88 4.88V7.5a6.8 6.8 0 0 0 3.76 1.13V6.13a4.34 4.34 0 0 1-.5-.31z" />
+            <path fill="#FE2C55" d="M15.8 5.1a4.34 4.34 0 0 1-3.26-3.26v-.56h-1.2v.56a4.34 4.34 0 0 0 3.26 3.26h1.2z" />
+            <path fill="#FFFFFF" d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.3 0 .58.05.85.14V8.4a6.84 6.84 0 0 0-.85-.05A6.33 6.33 0 0 0 3 14.68 6.34 6.34 0 0 0 9.33 21a6.33 6.33 0 0 0 6.33-6.33V8.11a8.16 8.16 0 0 0 4.69 1.48V6.14a4.83 4.83 0 0 1-.76-.45z" />
+          </svg>
         </div>
       );
     }
     // Facebook / Meta
     if (s.includes('facebook') || s.includes('meta')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-[#1877F2] text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[11px]">
-          f
+        <div className="w-5 h-5 rounded-full bg-[#1877F2] text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+          </svg>
         </div>
       );
     }
     // Apple
     if (s.includes('apple') || s.includes('icloud')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
-          
+        <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.32c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.36-.58.68-1.09 1.76-.95 2.8 1.01.08 2.06-.56 2.68-1.31" />
+          </svg>
         </div>
       );
     }
     // Amazon
     if (s.includes('amazon')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-[#FF9900] text-slate-900 flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
-          a
+        <div className="w-5 h-5 rounded-full bg-[#131921] text-[#FF9900] flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M13.94 11.08c-1.28.12-2.45.38-3.51.78-.96.36-1.68.88-2.16 1.56-.48.68-.72 1.47-.72 2.37 0 .96.32 1.73.96 2.31.64.58 1.48.87 2.52.87 1.04 0 1.97-.28 2.79-.84.82-.56 1.39-1.3 1.71-2.22V17h2.22v-6.93h-2.18v1.01zm-1.37 5.76c-.46.46-1.02.69-1.68.69-.58 0-1.04-.16-1.38-.48-.34-.32-.51-.76-.51-1.32 0-.68.23-1.23.69-1.65.46-.42 1.13-.72 2.01-.9 1.02-.21 2.02-.34 3.01-.39v.75c0 1.28-.38 2.38-1.14 3.3zm7.01 4.79C17.38 22.83 14.28 23.5 11 23.5c-4.22 0-8.08-1.28-11-3.5 2.31 1.28 5.6 2 9 2 3.19 0 6.27-.63 8.58-1.87z" />
+          </svg>
         </div>
       );
     }
@@ -560,48 +994,104 @@ export const LiveTestSmsView: React.FC = () => {
     // Binance
     if (s.includes('binance')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-[#F3BA2F] text-slate-950 flex items-center justify-center shrink-0 shadow-2xs font-black text-[10px]">
-          ◆
+        <div className="w-5 h-5 rounded-full bg-[#F3BA2F] text-slate-950 flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2l3.2 3.2-3.2 3.2-3.2-3.2L12 2zm-6.8 6.8l3.2 3.2-3.2 3.2-3.2-3.2 3.2-3.2zm13.6 0l3.2 3.2-3.2 3.2-3.2-3.2 3.2-3.2zM12 11.6l3.2 3.2-3.2 3.2-3.2-3.2 3.2-3.2zm0 8.8l3.2 3.2-3.2 3.2-3.2-3.2 3.2-3.2z" />
+          </svg>
         </div>
       );
     }
     // Netflix
     if (s.includes('netflix')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-black text-[#E50914] flex items-center justify-center shrink-0 shadow-2xs font-black text-[11px]">
-          N
+        <div className="w-5 h-5 rounded-full bg-black text-[#E50914] flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+            <path d="M9 2v20l3-5V2H9zm6 0l-3 5v15l3-5V2z" />
+          </svg>
         </div>
       );
     }
     // Uber
     if (s.includes('uber')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
-          Uber
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 16c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm-2-8h4v4h-4z" />
+          </svg>
         </div>
       );
     }
     // IMO
     if (s.includes('imo')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-[#00AEEF] text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[9px]">
-          imo
+        <div className="w-5 h-5 rounded-full bg-[#0088FF] text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <span className="font-black text-[9px] tracking-tighter">imo</span>
         </div>
       );
     }
     // Instagram
     if (s.includes('instagram')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
-          📸
+        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#833AB4] via-[#FD1D1D] to-[#F77737] text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3 h-3 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+          </svg>
         </div>
       );
     }
     // Twitter / X
     if (s.includes('twitter') || s.includes('x.com')) {
       return (
-        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
-          𝕏
+        <div className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center shrink-0 shadow-2xs p-0.5">
+          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+        </div>
+      );
+    }
+    // Viber
+    if (s.includes('viber')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#7360F2] text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+            <path d="M21 11.5c0-4.69-3.81-8.5-8.5-8.5S4 6.81 4 11.5c0 2.16.81 4.14 2.14 5.65L5 20l3.07-1.12c1.4.78 3.01 1.22 4.73 1.22 4.69 0 8.5-3.81 8.5-8.5z" />
+          </svg>
+        </div>
+      );
+    }
+    // Badoo
+    if (s.includes('badoo')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#7c26f8] text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <span className="text-[10px] leading-none">🧡</span>
+        </div>
+      );
+    }
+    // DHL
+    if (s.includes('dhl')) {
+      return (
+        <div className="w-5 h-5 rounded-xs bg-[#FFCC00] text-[#D40000] flex items-center justify-center shrink-0 shadow-2xs font-black text-[9px] tracking-tighter">
+          DHL
+        </div>
+      );
+    }
+    // Santander
+    if (s.includes('santander')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-[#EC0000] text-white flex items-center justify-center shrink-0 shadow-2xs font-bold text-[10px]">
+          S
+        </div>
+      );
+    }
+    // Notice
+    if (s.includes('notice')) {
+      return (
+        <div className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <svg className="w-3 h-3 fill-none stroke-current stroke-[2.5]" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
         </div>
       );
     }
@@ -615,22 +1105,47 @@ export const LiveTestSmsView: React.FC = () => {
   };
 
   // Helper to mask OTP code in message body text (matches Switchfy / KSI IPRN live test design)
-  const renderMaskedMessageBody = (text: string, isRevealed: boolean) => {
+  const renderMaskedMessageBody = (text: string, _isRevealed?: boolean) => {
     if (!text) return '';
-    if (isRevealed) return text;
-    // Mask G-XXXXXX or 4-8 digit codes in body text with asterisks
-    return text.replace(/\b([0-9]{4,8})\b/g, '••••••').replace(/G-([0-9]{4,8})/gi, 'G-••••••');
+    // Unconditionally mask standalone 4 to 8 digit numbers or G-XXXXXX formats with exactly 'xxxxx'
+    return text
+      .replace(/\b[0-9]{4,8}\b/g, 'xxxxx')
+      .replace(/G-[0-9]{4,8}/gi, 'G-xxxxx');
   };
+  // Deduplicate incoming logs so the same OTP on the same number never displays repeatedly
+  const uniqueLiveLogs = useMemo(() => {
+    const seenMap = new Map<string, SmsLog>();
+    for (const log of liveLogs) {
+      const normPhone = String(log.number || '').replace(/[^\d]/g, '');
+      const normOtp = String(log.otp || '').trim();
+      const normText = String(log.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const dedupeKey = `${normPhone}_${normOtp || normText}`;
+
+      if (!seenMap.has(dedupeKey)) {
+        seenMap.set(dedupeKey, log);
+      } else {
+        const existing = seenMap.get(dedupeKey)!;
+        if (new Date(log.timestamp).getTime() > new Date(existing.timestamp).getTime()) {
+          seenMap.set(dedupeKey, log);
+        }
+      }
+    }
+    return Array.from(seenMap.values());
+  }, [liveLogs]);
+
   const filteredLogs = useMemo(() => {
-    return liveLogs.filter(log => {
+    return uniqueLiveLogs.filter(log => {
+      const countryInfo = getCountryInfoByPhone(log.number || '', log.termination || '');
       const termMatch = 
         !searchTerm ||
         (log.text || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (log.number || '').includes(searchTerm) ||
         (log.termination || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        countryInfo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (log.sid || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-      const countryMatch = selectedCountry === 'All' || (log.termination || '').toLowerCase().includes(selectedCountry.toLowerCase());
+      const countryMatch = selectedCountry === 'All' || 
+        countryInfo.name.toLowerCase() === selectedCountry.toLowerCase();
       return termMatch && countryMatch;
     });
   }, [liveLogs, searchTerm, selectedCountry]);
@@ -730,19 +1245,23 @@ export const LiveTestSmsView: React.FC = () => {
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Message stream
             </h3>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              real-time feed
-            </span>
           </div>
 
           <div className="flex items-center gap-2">
             {/* Audio Mute/Unmute */}
             <button
-              onClick={() => setSoundEnabled(!soundEnabled)}
+              type="button"
+              onClick={() => {
+                const nextSound = !soundEnabled;
+                setSoundEnabled(nextSound);
+                if (nextSound) {
+                  playSmsSound();
+                }
+              }}
               className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition cursor-pointer"
-              title={soundEnabled ? 'Mute sound' : 'Enable sound'}
+              title={soundEnabled ? 'Mute sound (Currently ON)' : 'Enable sound (Currently OFF)'}
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
             </button>
 
             {/* Connected Pill */}
@@ -826,9 +1345,12 @@ export const LiveTestSmsView: React.FC = () => {
               }}
               className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-xs font-medium focus:outline-none cursor-pointer"
             >
+              <option value={20}>20</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
               <option value={200}>200</option>
+              <option value={500}>500</option>
+              <option value={1000}>All (1000+)</option>
             </select>
           </div>
 
@@ -855,13 +1377,8 @@ export const LiveTestSmsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Total messages shown count */}
-        <div className="text-xs text-slate-400 font-medium">
-          {paginatedLogs.length} / {filteredLogs.length} messages
-        </div>
-
-        {/* Message Cards List matching the screenshot */}
-        <div className="space-y-3 pt-2">
+        {/* Message Cards List with subtle hairline dividers and no outer card borders */}
+        <div className="divide-y divide-slate-100 dark:divide-slate-800/60 rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
           {paginatedLogs.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-400 font-semibold">
               Waiting for live incoming messages...
@@ -870,27 +1387,37 @@ export const LiveTestSmsView: React.FC = () => {
             paginatedLogs.map((log, idx) => {
               const logKey = log.id || `${log.number}-${idx}`;
               const cleanNumber = log.number ? log.number.replace(/^\+/, '') : '';
+              const maskedNumber = maskPhoneWithAreaCodeAndThreeDigits(log.number || '', log.termination || '');
               const rawOtp = log.otp || (log.text && (log.text.match(/\b\d{4,8}\b/) || [''])[0]) || '';
               const isRevealed = revealedOtpIds.has(logKey);
+              const countryInfo = getCountryInfoByPhone(log.number || '', log.termination || '');
+              
+              // Clean range/carrier name so country name is not repeated twice
+              let rangeDisplay = '';
+              if (log.termination) {
+                rangeDisplay = log.termination.replace(new RegExp('^' + countryInfo.name + '\\s*', 'i'), '').trim();
+              }
 
               return (
                 <div 
                   key={logKey}
-                  className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-4 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition space-y-3"
+                  className="p-4 transition space-y-3 bg-white hover:bg-slate-50/60 dark:bg-slate-900 dark:hover:bg-slate-800/40"
                 >
                   <div className="flex items-start gap-3">
                     {/* Country Flag */}
                     <div className="pt-0.5">
-                      {renderFlag(log.termination)}
+                      {renderFlag(log.termination, log.number)}
                     </div>
 
                     {/* Message Details */}
                     <div className="flex-1 min-w-0 space-y-1.5">
-                      {/* Line 1: Route Name + Relative Time */}
+                      {/* Line 1: Route Name + Carrier Name (Clean Plain Text) + Relative Time */}
                       <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                          {log.termination || 'Live Gateway'}
-                        </h4>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                            {log.termination || countryInfo.name}
+                          </h4>
+                        </div>
                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">
                           {formatTimeAgo(log.timestamp)}
                         </span>
@@ -899,76 +1426,25 @@ export const LiveTestSmsView: React.FC = () => {
                       {/* Line 2: Phone Number + Exact Time */}
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                          {cleanNumber}
+                          {maskedNumber}
                         </span>
                         <span className="text-xs text-slate-400 dark:text-slate-500 font-mono shrink-0">
                           {formatExactTime(log.timestamp)}
                         </span>
                       </div>
 
-                      {/* Line 3: Social Media / App Brand Logo + Sender badge + Cost pill */}
+                      {/* Line 3: Social Media / App Brand Logo + Sender badge */}
                       <div className="flex items-center gap-2 pt-0.5">
                         {renderBrandLogo(log.sid)}
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                          {log.sid || 'AUTHMSG'}
+                          {formatBrandName(log.sid)}
                         </span>
-                        <div className="px-2 py-0.5 rounded-sm bg-[#ecfccb] text-[#65a30d] dark:bg-lime-950/50 dark:text-lime-400 text-[11px] font-bold">
-                          {log.cost || '0.0100 USD'}
-                        </div>
                       </div>
 
                       {/* Line 4: Message Body with masked OTP text (matching Switchfy / KSI panel) */}
-                      <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed pt-1 select-text">
+                      <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed pt-1 select-text break-words break-all">
                         {renderMaskedMessageBody(log.text, isRevealed)}
                       </p>
-
-                      {/* Line 5: Masked / Hidden OTP Pill with Eye Toggle and Copy */}
-                      {rawOtp && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            OTP CODE:
-                          </span>
-                          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono font-bold text-xs tracking-wider shadow-2xs">
-                            <span className={isRevealed ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 tracking-widest'}>
-                              {isRevealed ? rawOtp : '••••••'}
-                            </span>
-                            
-                            {/* Toggle Reveal / Hide */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleRevealOtp(logKey);
-                              }}
-                              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer p-0.5"
-                              title={isRevealed ? 'Hide OTP' : 'Show OTP'}
-                            >
-                              {isRevealed ? (
-                                <EyeOff className="w-3.5 h-3.5" />
-                              ) : (
-                                <Eye className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-
-                            {/* Copy OTP */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(rawOtp);
-                                setCopiedId(`otp-${logKey}`);
-                                setTimeout(() => setCopiedId(null), 1800);
-                              }}
-                              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer p-0.5"
-                              title="Copy Real OTP"
-                            >
-                              {copiedId === `otp-${logKey}` ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
-                              ) : (
-                                <Clipboard className="w-3 h-3" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
 

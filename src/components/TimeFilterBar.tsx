@@ -23,15 +23,9 @@ export const TimeFilterBar: React.FC<TimeFilterBarProps> = ({
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
       {/* Title & Subtitle */}
       <div>
-        <div className="flex items-center gap-2.5">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Traffic overview
-          </h2>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-lime-500/15 text-lime-700 dark:text-lime-300 border border-lime-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-lime-500 animate-ping" />
-            Live Gateway
-          </span>
-        </div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+          Traffic overview
+        </h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
           Aggregated real-time OTP performance · Last {timePeriod}
         </p>

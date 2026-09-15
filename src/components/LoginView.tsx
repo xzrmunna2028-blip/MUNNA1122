@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   User,
   Lock,
@@ -12,8 +13,10 @@ import {
   KeyRound,
   UserPlus,
   Mail,
+  ShieldCheck,
 } from 'lucide-react';
 import { RegisteredUser } from './ActivationChatBot.js';
+import { getUserDisplayName } from '../utils/userProfileHelper';
 
 interface LoginViewProps {
   onLoginSuccess: (username: string) => void;
@@ -22,11 +25,13 @@ interface LoginViewProps {
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [showCreateAccountView, setShowCreateAccountView] = useState(false);
   
-  // Login fields - strictly empty by default (no auto-fill/pre-saved credentials)
+  // Login fields
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   
   // Register fields
   const [regName, setRegName] = useState('');
@@ -45,6 +50,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  // Load remembered credentials
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('codeflow_remembered_email');
+    if (savedEmail) {
+      setIdentifier(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
+
   // Sign In submit handler
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +69,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     const inputPass = password.trim();
 
     if (!inputUser) {
-      setErrorMessage('Please enter your Username or Email ID');
+      setErrorMessage('Please enter your Email Address');
       return;
     }
     if (!inputPass) {
@@ -66,41 +80,99 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     setTimeout(() => {
-      // 1. Check default admin/standard credentials
-      const defaultUsernames = [
-        'xzrmunna7788@gmail.com',
-        'xzrmunna7788',
-        'munna',
-        'xzrmunna',
-        'xzrmunna974@gmail.com'
-      ];
-      const isDefaultUser = defaultUsernames.includes(inputUser.toLowerCase());
-      const isDefaultPass = inputPass === 'MUNNA11' || inputPass === 'codeflow123';
+      const lowerUser = inputUser.toLowerCase();
 
-      if (isDefaultUser && isDefaultPass) {
+      // 1. Master Admin Login Check: xzrmunna7788@gmail.com / XZRMUNNA12061
+      if (
+        (lowerUser === 'xzrmunna7788@gmail.com' || lowerUser === 'xzrmunna7788') &&
+        inputPass === 'XZRMUNNA12061'
+      ) {
+        completeLogin('xzrmunna7788@gmail.com');
+        return;
+      }
+
+      // 2. Demo/Standard User Fallbacks
+      if (
+        (lowerUser === 'user@codeflow.com' || lowerUser === 'xzrmunna974@gmail.com') &&
+        (inputPass === 'codeflow123' || inputPass === 'MUNNA11')
+      ) {
         completeLogin(inputUser);
         return;
       }
 
-      // 2. Check dynamically registered users from localStorage
+      // Check if this account is currently pending approval
+      const pendingStr = localStorage.getItem('codeflow_pending_activations');
+      if (pendingStr) {
+        try {
+          const pendingList = JSON.parse(pendingStr);
+          if (Array.isArray(pendingList)) {
+            const foundPending = pendingList.find(
+              (p: any) =>
+                p.email?.toLowerCase().trim() === lowerUser ||
+                p.name?.toLowerCase().trim() === lowerUser
+            );
+            if (foundPending) {
+              setIsLoading(false);
+              setErrorMessage('Your account is currently PENDING admin approval. Please wait for the administrator to activate your account.');
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 3. Check admin-created users from localStorage
+      const adminUsersStr = localStorage.getItem('codeflow_admin_users_list_v2');
+      if (adminUsersStr) {
+        try {
+          const adminUsers = JSON.parse(adminUsersStr);
+          if (Array.isArray(adminUsers)) {
+            const foundAdminUser = adminUsers.find(
+              (u: any) =>
+                u.email?.toLowerCase().trim() === lowerUser ||
+                u.name?.toLowerCase().trim() === lowerUser
+            );
+            if (foundAdminUser && foundAdminUser.pass === inputPass) {
+              if (foundAdminUser.status === 'Pending') {
+                setIsLoading(false);
+                setErrorMessage('Your account status is PENDING approval. Please wait for an administrator to activate your access.');
+                return;
+              }
+              if (foundAdminUser.status === 'Suspended') {
+                setIsLoading(false);
+                setErrorMessage('Your account has been temporarily suspended by the administrator.');
+                return;
+              }
+              if (foundAdminUser.status === 'Banned') {
+                setIsLoading(false);
+                setErrorMessage('This account has been banned from the platform.');
+                return;
+              }
+              completeLogin(foundAdminUser.email, foundAdminUser.name);
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 4. Check dynamically registered users from localStorage
       const registeredUsersStr = localStorage.getItem('codeflow_registered_users');
       const registeredUsers: RegisteredUser[] = registeredUsersStr ? JSON.parse(registeredUsersStr) : [];
       
       const foundUser = registeredUsers.find(
         (u) =>
-          u.email.toLowerCase() === inputUser.toLowerCase() ||
-          u.name.toLowerCase() === inputUser.toLowerCase()
+          u.email.toLowerCase() === lowerUser ||
+          u.name.toLowerCase() === lowerUser
       );
 
       if (foundUser && foundUser.pass === inputPass) {
-        completeLogin(foundUser.name || foundUser.email);
+        completeLogin(foundUser.email, foundUser.name);
         return;
       }
 
       // Invalid login credentials
       setIsLoading(false);
-      setErrorMessage('Invalid Username/Email or Password! If you don\'t have an account, click "Create Account" below.');
-    }, 600);
+      setErrorMessage('Invalid Email or Password! Please try again.');
+    }, 800);
   };
 
   // Sign Up / Registration submit handler
@@ -144,7 +216,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
       if (isDuplicate) {
         setIsLoading(false);
-        setErrorMessage('This Email Address is already registered. Please login.');
+        setErrorMessage('This Email Address is already registered. Please sign in.');
         return;
       }
 
@@ -160,7 +232,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       localStorage.setItem('codeflow_registered_users', JSON.stringify(registeredUsers));
 
       setIsLoading(false);
-      setSuccessMessage('Account created successfully! You can now sign in.');
+      setSuccessMessage('Account created successfully! Switching to sign in...');
       
       // Auto-prefill the email for ease of login
       setIdentifier(email);
@@ -177,19 +249,28 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         setIsRegisterMode(false);
         setSuccessMessage('');
       }, 1500);
-    }, 800);
+    }, 1000);
   };
 
-  const completeLogin = (userName: string) => {
+  const completeLogin = (userEmail: string, explicitName?: string) => {
     setIsLoading(false);
-    setSuccessMessage('Login successful! Welcome back...');
+    setSuccessMessage('Successfully authenticated! Welcome back.');
     
+    // Remember me check
+    if (rememberMe) {
+      localStorage.setItem('codeflow_remembered_email', identifier);
+    } else {
+      localStorage.removeItem('codeflow_remembered_email');
+    }
+
     // Save login state in localStorage
     localStorage.setItem('codeflow_logged_in', 'true');
-    localStorage.setItem('codeflow_user', userName);
+    localStorage.setItem('codeflow_user', userEmail);
+    const resolvedName = explicitName || getUserDisplayName(userEmail);
+    localStorage.setItem('codeflow_username', resolvedName);
 
     setTimeout(() => {
-      onLoginSuccess(userName);
+      onLoginSuccess(userEmail);
     }, 600);
   };
 
@@ -201,24 +282,63 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       setForgotLoading(false);
       setForgotSuccess(true);
-    }, 800);
+    }, 1000);
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 text-slate-100 relative overflow-hidden font-sans p-4 sm:p-6">
-      {/* Background Ambient Glows */}
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#05070f] text-slate-100 relative overflow-hidden font-sans p-4 sm:p-6">
+      
+      {/* Sleek Cinematic Background Elements */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[100px]" />
+        {/* Animated dynamic grid pattern */}
+        <div 
+          className="absolute inset-0 opacity-[0.03]" 
+          style={{
+            backgroundImage: `radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)`,
+            backgroundSize: '32px 32px'
+          }}
+        />
+        
+        {/* Soft, rotating glowing ambient spheres */}
+        <motion.div 
+          animate={{
+            x: [0, 40, -20, 0],
+            y: [0, -50, 30, 0],
+            scale: [1, 1.1, 0.9, 1]
+          }}
+          transition={{
+            duration: 15,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+          className="absolute top-1/4 -left-48 w-96 h-96 bg-indigo-500/15 rounded-full blur-3xl" 
+        />
+        <motion.div 
+          animate={{
+            x: [0, -30, 50, 0],
+            y: [0, 60, -40, 0],
+            scale: [1, 0.95, 1.05, 1]
+          }}
+          transition={{
+            duration: 18,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 2
+          }}
+          className="absolute bottom-1/4 -right-48 w-96 h-96 bg-violet-600/15 rounded-full blur-3xl" 
+        />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-slate-900/40 rounded-full blur-[120px]" />
       </div>
 
-      {/* Elegant Container Card */}
-      <div className="w-full max-w-md bg-slate-900/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl shadow-2xl shadow-cyan-950/30 p-6 sm:p-8 relative z-10 transition-all duration-300">
-        
+      <div className="w-full max-w-md relative z-10">
         {/* Logo and Brand Info */}
-        <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-white p-1 shadow-xl shadow-cyan-500/20 flex items-center justify-center shrink-0 border border-slate-200 mb-3 transform hover:scale-105 transition-transform duration-300">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="flex flex-col items-center text-center mb-6"
+        >
+          <div className="w-14 h-14 rounded-2xl bg-slate-900/60 p-0.5 shadow-xl flex items-center justify-center shrink-0 border border-slate-800 transform hover:scale-105 transition-transform duration-300">
             <img
               src="/code_flow_logo.jpg"
               alt="Code Flow Logo"
@@ -226,335 +346,492 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             />
           </div>
           
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-1.5 justify-center">
-            Code Flow <span className="text-cyan-400">SMS</span>
+          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-1.5 justify-center mt-2.5">
+            Code Flow <span className="text-indigo-400 font-extrabold">SMS</span>
           </h1>
-          <p className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase mt-0.5">
-            ENTERPRISE VIRTUAL SMS GATEWAY
+          <p className="text-[9px] font-bold tracking-[0.2em] text-slate-500 uppercase mt-1">
+            ENTERPRISE VERIFICATION NETWORK
           </p>
-        </div>
+        </motion.div>
 
-        {/* Dynamic Headers based on Mode */}
-        <div className="mb-6 text-center">
-          <h2 className="text-lg font-bold text-white">
-            {isRegisterMode ? 'Create a New Account' : 'Sign In to Your Account'}
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            {isRegisterMode 
-              ? 'Fill in your details to register for a secure connection'
-              : 'Enter your credentials to manage your virtual gateway'}
-          </p>
-        </div>
-
-        {/* Error Message Alert */}
-        {errorMessage && (
-          <div className="mb-4 p-3 rounded-2xl bg-rose-950/70 border border-rose-800/80 text-rose-300 text-xs font-semibold flex items-center gap-2.5 animate-shake">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span className="flex-1 text-left">{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Success Message Alert */}
-        {successMessage && (
-          <div className="mb-4 p-3 rounded-2xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-semibold flex items-center gap-2.5 animate-fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="flex-1 text-left">{successMessage}</span>
-          </div>
-        )}
-
-        {/* Mode Forms */}
-        {!isRegisterMode ? (
-          /* LOGIN FORM */
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-                Username or Email ID
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <User className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Enter your registered email or username"
-                  required
-                  autoComplete="username"
-                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowForgotModal(true)}
-                  className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer"
-                >
-                  Forgot Password?
-                </button>
-              </div>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Lock className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your security password"
-                  required
-                  autoComplete="current-password"
-                  className="w-full pl-10 pr-11 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white transition cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-red-500/15 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none mt-2"
+        {/* Container Card with AnimatePresence */}
+        <AnimatePresence mode="wait">
+          {showCreateAccountView ? (
+            /* CREATE AN ACCOUNT SCREEN (EXACT MATCH FOR USER SCREENSHOT) */
+            <motion.div 
+              key="create-account-card"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -15 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="bg-[#0b1329] backdrop-blur-2xl border border-slate-800/90 rounded-3xl shadow-2xl p-6 sm:p-8 relative text-center"
             >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-4 h-4" />
-                  <span>SIGN IN TO PANEL</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </>
-              )}
-            </button>
-          </form>
-        ) : (
-          /* REGISTRATION FORM */
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-                Full Name
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <User className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type="text"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="e.g. John Doe"
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
-                />
-              </div>
-            </div>
+              {/* Top subtle decorative accent line */}
+              <div className="absolute top-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-                Email Address
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Mail className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type="email"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="e.g. name@domain.com"
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-                Security Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Lock className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type={showRegPassword ? 'text' : 'password'}
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="At least 5 characters"
-                  required
-                  className="w-full pl-10 pr-11 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowRegPassword(!showRegPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white transition cursor-pointer"
-                >
-                  {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-300 uppercase tracking-wider block">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Lock className="w-4 h-4 text-cyan-400" />
-                </div>
-                <input
-                  type={showRegPassword ? 'text' : 'password'}
-                  value={regConfirmPassword}
-                  onChange={(e) => setRegConfirmPassword(e.target.value)}
-                  placeholder="Confirm security password"
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-cyan-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 transition-all font-mono"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-cyan-500/15 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none mt-2"
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Registering...</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus className="w-4 h-4" />
-                  <span>CREATE REAL ACCOUNT</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </>
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* Dynamic Navigation Mode Switcher */}
-        <div className="mt-6 pt-5 border-t border-slate-800/60 text-center">
-          <p className="text-xs text-slate-400">
-            {isRegisterMode ? 'Already have an account?' : "Don't have an account yet?"}{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegisterMode(!isRegisterMode);
-                setErrorMessage('');
-                setSuccessMessage('');
-              }}
-              className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline transition cursor-pointer"
-            >
-              {isRegisterMode ? 'Sign In Now' : 'Create Account'}
-            </button>
-          </p>
-        </div>
-
-      </div>
-
-      {/* Forgot Password Modal */}
-      {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-slate-100">
-            <button
-              onClick={() => {
-                setShowForgotModal(false);
-                setForgotSuccess(false);
-                setForgotEmail('');
-              }}
-              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-800/60 flex items-center justify-center text-cyan-400">
-                <KeyRound className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-white">Reset Password</h3>
-                <p className="text-xs text-slate-400">Recover your Code Flow SMS account</p>
-              </div>
-            </div>
-
-            {forgotSuccess ? (
-              <div className="space-y-4 py-3">
-                <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-xs font-medium leading-relaxed">
-                  <p className="font-bold text-emerald-200 mb-1">Reset Link Sent!</p>
-                  Password reset instructions have been dispatched to your email ({forgotEmail || 'your email'}). You can also contact support for instant help.
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setShowForgotModal(false);
-                      setForgotSuccess(false);
-                      setForgotEmail('');
-                    }}
-                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer text-center"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter your registered Email ID. We will send you instructions to reset your password.
-                </p>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Email Address</label>
-                  <input
-                    type="email"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="e.g. user@domain.com"
-                    required
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-medium text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
+              {/* Brand Logo & Title */}
+              <div className="flex flex-col items-center justify-center mb-5">
+                <div className="w-16 h-16 rounded-2xl bg-slate-900/90 p-1 border border-slate-800 shadow-xl flex items-center justify-center mb-3 transform hover:scale-105 transition-transform duration-300">
+                  <img
+                    src="/code_flow_logo.jpg"
+                    alt="FOX SMS Logo"
+                    className="w-full h-full object-contain rounded-xl"
                   />
                 </div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">
+                  Create an Account
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Contact our team to get your account created
+                </p>
+              </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForgotModal(false);
-                      setForgotSuccess(false);
-                      setForgotEmail('');
-                    }}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={forgotLoading}
-                    className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer"
-                  >
-                    {forgotLoading ? 'Processing...' : 'Send Reset Request'}
-                  </button>
-                </div>
-              </form>
-            )}
+              <div className="w-full h-[1px] bg-slate-800/70 my-5" />
+
+              {/* ENGLISH Section */}
+              <div className="text-left space-y-2">
+                <h4 className="text-emerald-400 font-bold text-xs tracking-wider uppercase">
+                  ENGLISH
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed font-normal">
+                  To get started, please contact us on Telegram with your company name and the service you require. Our team will set up your account and send you your login details.
+                </p>
+              </div>
+
+              <div className="w-full h-[1px] bg-slate-800/70 my-5" />
+
+              {/* ARABIC Section */}
+              <div className="text-right space-y-2" dir="rtl">
+                <h4 className="text-emerald-400 font-bold text-xs tracking-wider uppercase text-right">
+                  ARABIC
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed font-normal text-right">
+                  يتم إنشاء الحسابات على هذه اللوحة بواسطة فريقنا. للبدء، يرجى التواصل معنا عبر التليجرام مع اسم شركتك والخدمة التي تحتاجها. سيقوم فريقنا بإعداد حسابك وإرسال بيانات الدخول إليك.
+                </p>
+              </div>
+
+              <div className="w-full h-[1px] bg-slate-800/70 my-6" />
+
+              {/* Green Telegram Action Button & Back Button */}
+              <div className="flex flex-col items-center justify-center gap-4">
+                <a
+                  href="https://t.me/xzrmunna974"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/25 transform hover:scale-110 active:scale-95 transition-all duration-200 group"
+                  title="Contact us directly on Telegram"
+                >
+                  <svg className="w-6 h-6 fill-current text-slate-950 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.38-.49 1.05-.75 4.12-1.79 6.87-2.97 8.25-3.55 3.93-1.64 4.74-1.93 5.27-1.94.12 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z"/>
+                  </svg>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAccountView(false)}
+                  className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer mt-1"
+                >
+                  <span>← Back to Login</span>
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="login-main-card"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -15 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="bg-slate-950/60 backdrop-blur-2xl border border-slate-800/80 rounded-3xl shadow-2xl p-6 sm:p-8 relative"
+            >
+          {/* Top subtle decorative accent line */}
+          <div className="absolute top-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+
+          {/* Dynamic Header */}
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-white tracking-tight">
+              Welcome Back
+            </h2>
+            <p className="text-xs text-slate-400 mt-1.5">
+              Sign in to continue
+            </p>
           </div>
-        </div>
+
+          {/* Alerts using AnimatePresence */}
+          <AnimatePresence mode="wait">
+            {errorMessage && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-4 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold flex items-center gap-2.5"
+              >
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="flex-1 text-left leading-relaxed">{errorMessage}</span>
+              </motion.div>
+            )}
+
+            {successMessage && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-4 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2.5"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="flex-1 text-left leading-relaxed">{successMessage}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Core Login/Register Forms */}
+          <AnimatePresence mode="wait">
+            {!isRegisterMode ? (
+              /* LOGIN FORM */
+              <motion.form 
+                key="login-form"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.25 }}
+                onSubmit={handleLogin} 
+                className="space-y-4"
+              >
+                {/* Email input field */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Email Address
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder="name@domain.com"
+                      required
+                      autoComplete="email"
+                      className="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300"
+                    />
+                  </div>
+                </div>
+
+                {/* Password input field */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotEmail('');
+                        setForgotSuccess(false);
+                        setShowForgotModal(true);
+                      }}
+                      className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition focus:outline-none"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      autoComplete="current-password"
+                      className="w-full pl-10 pr-11 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember Me and Extra actions */}
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition cursor-pointer select-none">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="sr-only"
+                      />
+                      <div className={`w-4 h-4 rounded-md border transition-all duration-200 flex items-center justify-center ${
+                        rememberMe 
+                          ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400' 
+                          : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'
+                      }`}>
+                        {rememberMe && <ShieldCheck className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                    </div>
+                    <span>Remember me</span>
+                  </label>
+                </div>
+
+                {/* Animated Prominent Sign In button */}
+                <motion.button
+                  type="submit"
+                  disabled={isLoading}
+                  whileHover={{ scale: 1.01, translateY: -1 }}
+                  whileTap={{ scale: 0.99, translateY: 0 }}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-950/20 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none pt-3 pb-3 mt-3"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Signing in...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4" />
+                      <span>Sign in</span>
+                      <ArrowRight className="w-4 h-4 ml-0.5" />
+                    </>
+                  )}
+                </motion.button>
+              </motion.form>
+            ) : (
+              /* REGISTRATION FORM */
+              <motion.form 
+                key="register-form"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.25 }}
+                onSubmit={handleRegister} 
+                className="space-y-4"
+              >
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Full Name
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      placeholder="John Doe"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Email Address
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="name@domain.com"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Password
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Min. 5 characters"
+                      required
+                      className="w-full pl-10 pr-11 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPassword(!showRegPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition focus:outline-none"
+                    >
+                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Confirm Password
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
+                      placeholder="Confirm your password"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <motion.button
+                  type="submit"
+                  disabled={isLoading}
+                  whileHover={{ scale: 1.01, translateY: -1 }}
+                  whileTap={{ scale: 0.99, translateY: 0 }}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-950/20 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none pt-3 pb-3 mt-3"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Registering...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4" />
+                      <span>Create Account</span>
+                      <ArrowRight className="w-4 h-4 ml-0.5" />
+                    </>
+                  )}
+                </motion.button>
+              </motion.form>
+            )}
+          </AnimatePresence>
+
+          {/* Reserved slot for custom options */}
+          <div className="mt-6 pt-5 border-t border-slate-800/60 text-center flex items-center justify-center gap-1.5">
+            <span className="text-xs text-slate-400 font-medium">Don't have an account?</span>
+            <button
+              type="button"
+              onClick={() => setShowCreateAccountView(true)}
+              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition-colors cursor-pointer"
+            >
+              Create an Account
+            </button>
+          </div>
+        </motion.div>
       )}
+    </AnimatePresence>
+  </div>
+
+      {/* Forgot Password Modal */}
+      <AnimatePresence>
+        {showForgotModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.3 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-slate-100"
+            >
+              <button
+                onClick={() => {
+                  setShowForgotModal(false);
+                  setForgotSuccess(false);
+                  setForgotEmail('');
+                }}
+                className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition focus:outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-indigo-950 border border-indigo-800 flex items-center justify-center text-indigo-400">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Reset Password</h3>
+                  <p className="text-xs text-slate-400">Recover your Code Flow SMS account</p>
+                </div>
+              </div>
+
+              {forgotSuccess ? (
+                <div className="space-y-4 py-3">
+                  <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-medium leading-relaxed">
+                    <p className="font-bold text-emerald-200 mb-1">Reset Link Sent!</p>
+                    Instructions have been dispatched to your email address ({forgotEmail}). You can follow the directions inside to access your account.
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowForgotModal(false);
+                        setForgotSuccess(false);
+                        setForgotEmail('');
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Enter your registered Email Address. We will send you instructions to reset your password.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Email Address</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="name@domain.com"
+                      required
+                      className="w-full px-4 py-3 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl text-xs sm:text-sm font-semibold text-white placeholder-slate-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotModal(false);
+                        setForgotSuccess(false);
+                        setForgotEmail('');
+                      }}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition focus:outline-none"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition disabled:opacity-50"
+                    >
+                      {forgotLoading ? 'Processing...' : 'Send Reset Request'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -17,7 +17,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { RealSmsLog, RentedNumber } from '../types.js';
-import { getRealSmsLogs } from '../utils/realtimeSmsService.js';
+import { getUserSmsLogs } from '../utils/realtimeSmsService.js';
 
 interface OtpSessionModalProps {
   isOpen: boolean;
@@ -56,7 +56,7 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
 
   // Load logs for the selected number
   const refreshNumberLogs = () => {
-    const allLogs = getRealSmsLogs();
+    const allLogs = getUserSmsLogs();
     if (selectedNumber && selectedNumber.number) {
       const cleanTarget = (selectedNumber.number || '').replace(/\s+/g, '');
       const filtered = allLogs.filter((l) => {
@@ -84,14 +84,16 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
       refreshNumberLogs();
       // If we are inspecting a log, see if it was updated
       if (selectedLog) {
-        const allLogs = getRealSmsLogs();
+        const allLogs = getUserSmsLogs();
         const found = allLogs.find((l) => l.id === selectedLog.id);
         if (found) setSelectedLog(found);
       }
     };
 
+    window.addEventListener('user_sms_updated', handleUpdate);
     window.addEventListener('real_sms_updated', handleUpdate);
     return () => {
+      window.removeEventListener('user_sms_updated', handleUpdate);
       window.removeEventListener('real_sms_updated', handleUpdate);
     };
   }, [isOpen, selectedNumber, selectedLog]);
@@ -463,6 +465,23 @@ export const OtpSessionModal: React.FC<OtpSessionModalProps> = ({
                       <span>{new Date(selectedLog.timestamp).toISOString()} ({new Date(selectedLog.timestamp).toLocaleTimeString()})</span>
                     </span>
                   </div>
+
+                  {/* Dynamic DOM injection of any additional API metadata/payload parameters */}
+                  {Object.entries(selectedLog).map(([key, value]) => {
+                    const knownKeys = ['id', 'number', 'termination', 'sid', 'status', 'text', 'otp', 'timestamp', 'cost', 'sender'];
+                    if (knownKeys.includes(key)) return null;
+                    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return null;
+                    return (
+                      <div key={key} className="p-3.5 rounded-xl bg-indigo-500/5 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 space-y-1 sm:col-span-1 animate-fade-in">
+                        <span className="text-[10px] font-bold text-indigo-400 dark:text-indigo-400 uppercase tracking-wider block">
+                          API FIELD: {key.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                        <span className="text-xs font-black text-slate-900 dark:text-white font-mono break-all">
+                          {String(value)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

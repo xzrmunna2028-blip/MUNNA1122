@@ -47,9 +47,14 @@ import {
   ToggleRight,
   Upload,
   Crown,
+  ExternalLink,
+  AlertTriangle,
+  Server,
+  Settings,
 } from 'lucide-react';
 import { RegisteredUser } from './ActivationChatBot';
 import { MasterKeyManager } from './MasterKeyManager';
+import { InvitationManagerView } from './InvitationManagerView';
 import { NotificationItem } from '../types';
 
 export interface AdminUserRecord extends RegisteredUser {
@@ -137,6 +142,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     | 'sub_admins'
     | 'master_key'
     | 'apikeys'
+    | 'smtp'
     | 'support'
     | 'updates'
     | 'notifications'
@@ -145,6 +151,49 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Online' | 'Active' | 'Suspended' | 'Banned'>('All');
+
+  // Brevo & Custom SMTP States
+  interface SmtpServerConfig {
+    status: string;
+    host: string;
+    port: number;
+    user: string;
+    secure: boolean;
+    from: string;
+    provider: string;
+    serverIp: string;
+    isBrevo: boolean;
+    maskedPass: string;
+    brevoSecurityUrl?: string;
+  }
+
+  const [smtpServerConfig, setSmtpServerConfig] = useState<SmtpServerConfig | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+  const [configHost, setConfigHost] = useState<string>('smtp-relay.brevo.com');
+  const [configPort, setConfigPort] = useState<string>('587');
+  const [configSecure, setConfigSecure] = useState<boolean>(false);
+  const [configUser, setConfigUser] = useState<string>('b969f4001@smtp-brevo.com');
+  const [configPass, setConfigPass] = useState<string>('');
+  const [configFrom, setConfigFrom] = useState<string>('"Traffic Analytics" <b969f4001@smtp-brevo.com>');
+  const [configProvider, setConfigProvider] = useState<string>('Brevo SMTP Relay');
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+
+  const [smtpTestEmail, setSmtpTestEmail] = useState<string>('b969f4001@smtp-brevo.com');
+  const [smtpTesting, setSmtpTesting] = useState<boolean>(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<{
+    success: boolean;
+    message: string;
+    messageId?: string;
+    isIpUnauthorized?: boolean;
+    serverIp?: string;
+    resolution?: string;
+    brevoSecurityUrl?: string;
+  } | null>(null);
+  const [smtpCustomTo, setSmtpCustomTo] = useState<string>('');
+  const [smtpCustomSubject, setSmtpCustomSubject] = useState<string>('');
+  const [smtpCustomMessage, setSmtpCustomMessage] = useState<string>('');
+  const [smtpSendingCustom, setSmtpSendingCustom] = useState<boolean>(false);
+  const [showSmtpKey, setShowSmtpKey] = useState<boolean>(false);
 
   // Modal states for user actions
   const [selectedUserForPassword, setSelectedUserForPassword] = useState<AdminUserRecord | null>(null);
@@ -673,7 +722,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       customNotifications: [],
     };
 
-    setUsers((prev) => [newUser, ...prev]);
+    const updatedUsersList = [newUser, ...users];
+    setUsers(updatedUsersList);
+    localStorage.setItem('codeflow_admin_users_list_v2', JSON.stringify(updatedUsersList));
 
     const regStr = localStorage.getItem('codeflow_registered_users');
     const regList: RegisteredUser[] = regStr ? JSON.parse(regStr) : [];
@@ -684,12 +735,32 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       activatedAt: newUser.activatedAt,
     });
     localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
+    window.dispatchEvent(new Event('storage'));
+
+    // Automatically send welcome email with credentials via Brevo SMTP relay
+    fetch('/api/send-welcome-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        password: newUser.pass,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('[SMTP] Welcome email sent successfully to', newUser.email);
+        }
+      })
+      .catch((err) => console.error('[SMTP] Welcome email error:', err));
 
     setManualName('');
     setManualEmail('');
     setManualPass('');
     setManualBalance('50.00');
-    showToast(`Account Created & Activated for ${newUser.email}`);
+    showToast(`Account Created for "${newUser.name}" (${newUser.email})`);
     setActiveSection('users');
   };
 
@@ -759,6 +830,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       const filtered = prev.filter((k) => k.user.toLowerCase() !== targetEmail.toLowerCase());
       return [newApiKey, ...filtered];
     });
+
+    localStorage.setItem(`ksi_api_unlocked_${targetEmail.toLowerCase()}`, 'true');
+    window.dispatchEvent(new Event('storage'));
 
     setNewKeyName('');
     setNewKeyUser('');
@@ -966,6 +1040,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       highlight: false,
     },
     {
+      id: 'invitations',
+      label: '10-Min Verification Links',
+      icon: Send,
+      count: '4-Step',
+      highlight: true,
+    },
+    {
       id: 'pending_activations',
       label: 'Pending Accounts',
       icon: Clock,
@@ -974,8 +1055,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     },
     { id: 'manual_create', label: 'Manual Account Create', icon: UserPlus, count: null },
     { id: 'sub_admins', label: 'Sub-Admin Accounts', icon: Shield, count: subAdmins.length },
-    { id: 'master_key', label: 'মাস্টার কি (Master Key)', icon: Crown, count: 'PRO', highlight: true },
+    { id: 'master_key', label: 'Master Key Gateway', icon: Crown, count: 'PRO', highlight: false },
     { id: 'apikeys', label: 'API Keys & Gateway', icon: Key, count: apiKeys.length },
+    { id: 'smtp', label: 'Brevo SMTP & Email Relay', icon: Mail, count: 'Live', highlight: false },
     {
       id: 'support',
       label: 'Live Chat Support',
@@ -985,6 +1067,144 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     { id: 'updates', label: 'Website Updates', icon: Megaphone, count: broadcasts.length },
     { id: 'notifications', label: 'Notification Center', icon: Bell, count: null },
   ];
+
+  const fetchSmtpConfig = async () => {
+    try {
+      const res = await fetch('/api/smtp-config');
+      if (res.ok) {
+        const data = await res.json();
+        setSmtpServerConfig(data);
+        if (data.host) setConfigHost(data.host);
+        if (data.port) setConfigPort(String(data.port));
+        if (data.user) setConfigUser(data.user);
+        if (data.from) setConfigFrom(data.from);
+        if (data.secure !== undefined) setConfigSecure(data.secure);
+        if (data.provider) setConfigProvider(data.provider);
+      }
+    } catch (e) {
+      console.warn('Error fetching SMTP config:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchSmtpConfig();
+  }, []);
+
+  const handleTestSmtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSmtpTesting(true);
+    setSmtpTestResult(null);
+    try {
+      const res = await fetch('/api/test-smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testEmail: smtpTestEmail }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSmtpTestResult({
+          success: true,
+          message: data.message || 'SMTP connection verified! Test email dispatched.',
+          messageId: data.messageId,
+        });
+        showToast('SMTP Test Email Sent Successfully!');
+      } else {
+        setSmtpTestResult({
+          success: false,
+          message: data.error || 'Failed to connect to SMTP relay',
+          isIpUnauthorized: data.isIpUnauthorized,
+          serverIp: data.serverIp,
+          resolution: data.resolution,
+          brevoSecurityUrl: data.brevoSecurityUrl,
+        });
+        if (data.isIpUnauthorized) {
+          showToast(`Brevo IP Block (525): Authorize server IP ${data.serverIp}`);
+        } else {
+          showToast('SMTP Test Failed: ' + (data.error || 'Check credentials'));
+        }
+      }
+    } catch (err: any) {
+      setSmtpTestResult({
+        success: false,
+        message: err.message || 'Network error testing SMTP',
+      });
+    } finally {
+      setSmtpTesting(false);
+    }
+  };
+
+  const handleSaveSmtpConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingConfig(true);
+    try {
+      const res = await fetch('/api/smtp-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: configHost,
+          port: configPort,
+          secure: configSecure,
+          user: configUser,
+          pass: configPass,
+          from: configFrom,
+          provider: configProvider,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('SMTP settings updated successfully!');
+        setShowConfigModal(false);
+        setConfigPass('');
+        await fetchSmtpConfig();
+      } else {
+        showToast('Failed to update SMTP: ' + (data.error || 'Check configuration'));
+      }
+    } catch (err: any) {
+      showToast('Error saving SMTP: ' + err.message);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleSendCustomEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!smtpCustomTo || !smtpCustomSubject || !smtpCustomMessage) {
+      showToast('Please fill all email fields');
+      return;
+    }
+    setSmtpSendingCustom(true);
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: smtpCustomTo,
+          subject: smtpCustomSubject,
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 24px; max-width: 600px; margin: auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+              <h3 style="color: #0f172a; margin-top: 0;">${smtpCustomSubject}</h3>
+              <p style="color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-line;">${smtpCustomMessage}</p>
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+              <p style="color: #64748b; font-size: 11px;">Sent from Traffic Analytics Admin Gateway via Brevo SMTP</p>
+            </div>
+          `,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Email dispatched to ${smtpCustomTo}!`);
+        setSmtpCustomTo('');
+        setSmtpCustomSubject('');
+        setSmtpCustomMessage('');
+      } else {
+        showToast(`Dispatch failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`);
+    } finally {
+      setSmtpSendingCustom(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in text-slate-100 font-sans pb-16">
@@ -1218,13 +1438,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-black text-white flex items-center gap-2">
-                  <span>মাস্টার কি কন্ট্রোল ও লাইভ এপিআই রুলস</span>
+                  <span>Master Key Control & Live API Rules</span>
                   <span className="px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-bold">
                     HOT
                   </span>
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  একটিমাত্র মাস্টার কি বসালেই সমস্ত লাইভ নাম্বার, এসএমএস রুলস এবং টেস্ট মেসেজ প্ল্যাটফর্মে ইনপুট হয়ে যাবে।
+                  Configure a single Master Key to inject live phone numbers, SMS capture rules, and real-time test messages into the platform.
                 </p>
               </div>
             </div>
@@ -1234,7 +1454,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-950 flex items-center gap-2 cursor-pointer transition shrink-0"
             >
               <Key className="w-4 h-4" />
-              <span>মাস্টার কি প্যানেলে যান</span>
+              <span>Open Master Key Gateway</span>
             </button>
           </div>
         </div>
@@ -1256,8 +1476,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
               <button
+                onClick={() => setActiveSection('invitations')}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-lime-600 to-emerald-600 hover:from-lime-500 hover:to-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition"
+              >
+                <Send className="w-4 h-4" />
+                <span>10-Min Invite Link</span>
+              </button>
+              <button
                 onClick={() => setActiveSection('manual_create')}
-                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>Create User</span>
@@ -1633,6 +1860,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         </div>
       )}
 
+      {/* SECTION 4B: 10-MINUTE VERIFICATION LINKS & 4-STEP ONBOARDING */}
+      {activeSection === 'invitations' && (
+        <InvitationManagerView showToast={showToast} />
+      )}
+
       {/* SECTION 5: SUB-ADMIN ACCOUNTS */}
       {activeSection === 'sub_admins' && (
         <div className="space-y-6">
@@ -1890,6 +2122,359 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         </div>
       )}
 
+      {/* SECTION 6.5: BREVO SMTP & EMAIL RELAY */}
+      {activeSection === 'smtp' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-emerald-400" />
+                  <span>{smtpServerConfig?.provider || 'Brevo SMTP Relay'} & Email Gateway</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Production transactional email delivery gateway for user activations, OTPs, password resets, and 10-minute onboarding invitations.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Configure SMTP</span>
+                </button>
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs font-black">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Relay Configured</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Brevo IP Authorization Notice Banner */}
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5 shrink-0">
+                  <Server className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black text-amber-300">Server Outbound Public IP:</span>
+                    <code className="px-2.5 py-0.5 rounded-md bg-slate-950 text-emerald-400 font-mono text-xs font-black border border-slate-800">
+                      {smtpServerConfig?.serverIp || '34.96.48.153'}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(smtpServerConfig?.serverIp || '34.96.48.153');
+                        showToast('Server IP copied to clipboard!');
+                      }}
+                      className="text-xs text-slate-200 hover:text-white px-2.5 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 flex items-center gap-1 transition cursor-pointer border border-slate-700"
+                    >
+                      <Copy className="w-3 h-3 text-cyan-400" />
+                      <span>Copy IP</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed max-w-3xl">
+                    <strong>Notice on Brevo Error 525 (Unauthorized IP address):</strong> Brevo accounts enforce an "Authorized IPs" security policy by default. To allow this cloud deployment to send emails, either <strong>deactivate</strong> the "Blocking unauthorized IP addresses for SMTP keys" setting in Brevo (recommended for cloud servers) OR authorize server IP <strong className="text-emerald-400 font-mono">{smtpServerConfig?.serverIp || '34.96.48.153'}</strong>.
+                  </p>
+                </div>
+              </div>
+              <div className="shrink-0 self-end md:self-auto">
+                <a
+                  href={smtpServerConfig?.brevoSecurityUrl || 'https://app.brevo.com/settings/security/ip-management'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                >
+                  <span>Brevo Authorized IPs</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Server Configuration Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SMTP Server</span>
+                <p className="text-sm font-black text-white font-mono truncate" title={smtpServerConfig?.host || 'smtp-relay.brevo.com'}>
+                  {smtpServerConfig?.host || 'smtp-relay.brevo.com'}
+                </p>
+                <span className="text-[10px] text-emerald-400 font-semibold">{smtpServerConfig?.provider || 'Brevo Gateway'}</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Port & Encryption</span>
+                <p className="text-sm font-black text-white font-mono">
+                  {smtpServerConfig?.port || 587} ({smtpServerConfig?.secure ? 'SSL/TLS' : 'STARTTLS'})
+                </p>
+                <span className="text-[10px] text-cyan-400 font-semibold">TLS Handshake Configured</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SMTP Login / User</span>
+                <p className="text-sm font-black text-white font-mono truncate" title={smtpServerConfig?.user || 'b969f4001@smtp-brevo.com'}>
+                  {smtpServerConfig?.user || 'b969f4001@smtp-brevo.com'}
+                </p>
+                <span className="text-[10px] text-purple-400 font-semibold">Authenticated Account</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SMTP Key / Password</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowSmtpKey(!showSmtpKey)}
+                      className="text-slate-400 hover:text-white transition cursor-pointer p-0.5"
+                    >
+                      {showSmtpKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('xsmtpsib-f83c3c38454ecfaa5e6a3fc112b09e1caedd214f76df87398447e9ba73426a1d-Vgp1pWNyS9URRcJ4');
+                        showToast('SMTP Key copied to clipboard');
+                      }}
+                      className="text-slate-400 hover:text-white transition cursor-pointer p-0.5"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs font-mono text-white truncate">
+                  {showSmtpKey
+                    ? 'xsmtpsib-f83c3c38454ecfaa5e6a3fc112b09e1caedd214f76df87398447e9ba73426a1d-Vgp1pWNyS9URRcJ4'
+                    : (smtpServerConfig?.maskedPass || '••••••••••••••••••••••••••••••')}
+                </p>
+                <span className="text-[10px] text-emerald-400 font-semibold">Loaded in Backend Transporter</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Testing & Interactive Dispatch Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Live Connection Test Box */}
+            <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <RefreshCw className="w-4 h-4 text-cyan-400" />
+                  <h4 className="text-sm font-black text-white">Live Relay Connection Test</h4>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Sends an immediate test email through the active SMTP relay to verify connectivity, handshake, and authorization.
+                </p>
+
+                <form onSubmit={handleTestSmtp} className="mt-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Test Recipient Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={smtpTestEmail}
+                      onChange={(e) => setSmtpTestEmail(e.target.value)}
+                      placeholder="e.g. your-email@gmail.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={smtpTesting}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black transition cursor-pointer shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {smtpTesting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Verifying & Sending via SMTP Relay...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Send Test Email via SMTP Relay</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                {/* Test Result Display */}
+                {smtpTestResult && (
+                  <div
+                    className={`mt-4 p-4 rounded-2xl border text-xs space-y-2.5 ${
+                      smtpTestResult.success
+                        ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                        : smtpTestResult.isIpUnauthorized
+                        ? 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                        : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-bold">
+                      {smtpTestResult.success ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : smtpTestResult.isIpUnauthorized ? (
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                      )}
+                      <span className="text-sm">
+                        {smtpTestResult.success
+                          ? 'Relay Connection Verified!'
+                          : smtpTestResult.isIpUnauthorized
+                          ? 'Brevo Security: 525 5.7.1 Unauthorized IP address'
+                          : 'Relay Connection Error'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] leading-relaxed font-medium">{smtpTestResult.message}</p>
+
+                    {/* Specific Actionable Guidance for Brevo IP Restriction */}
+                    {smtpTestResult.isIpUnauthorized && (
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-amber-500/30 text-[11px] text-slate-300 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-300">Quick Resolution Steps:</span>
+                          <span className="font-mono text-xs text-emerald-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                            IP: {smtpTestResult.serverIp || '34.96.48.153'}
+                          </span>
+                        </div>
+                        <ol className="list-decimal pl-4 space-y-1 text-slate-300">
+                          <li>
+                            Open your Brevo dashboard at{' '}
+                            <a
+                              href="https://app.brevo.com/settings/security/ip-management"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-cyan-400 underline font-semibold"
+                            >
+                              Settings &rarr; Security &rarr; Authorized IPs
+                            </a>
+                            .
+                          </li>
+                          <li>
+                            Under <strong>"Blocking unauthorized IP addresses for SMTP keys"</strong>, click{' '}
+                            <strong className="text-amber-300">Deactivate</strong> (recommended for cloud servers).
+                          </li>
+                          <li>
+                            <em>Or</em> click <strong>"Authorize IP address"</strong> and paste{' '}
+                            <strong className="text-emerald-400 font-mono">{smtpTestResult.serverIp || '34.96.48.153'}</strong>.
+                          </li>
+                        </ol>
+                        <div className="pt-1 flex items-center gap-2">
+                          <a
+                            href="https://app.brevo.com/settings/security/ip-management"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 inline-flex items-center gap-1"
+                          >
+                            <span>Open Brevo IP Management</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(smtpTestResult.serverIp || '34.96.48.153');
+                              showToast('Server IP copied to clipboard');
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3 text-cyan-400" />
+                            <span>Copy Server IP</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {smtpTestResult.messageId && (
+                      <p className="mt-1 font-mono text-[10px] text-slate-400">
+                        Message-ID: {smtpTestResult.messageId}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  Auto-Welcome Integration
+                </p>
+                <p>When you create an account in Manual Create or send 10-minute onboarding invitations, transactional emails are automatically routed through this relay.</p>
+              </div>
+            </div>
+
+            {/* Direct Email Dispatcher */}
+            <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Mail className="w-4 h-4 text-purple-400" />
+                  <h4 className="text-sm font-black text-white">Direct Email Composer</h4>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Send a direct announcement, credential reminder, or custom message to any user.
+                </p>
+              </div>
+
+              <form onSubmit={handleSendCustomEmail} className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">Recipient</label>
+                  <input
+                    type="email"
+                    required
+                    value={smtpCustomTo}
+                    onChange={(e) => setSmtpCustomTo(e.target.value)}
+                    placeholder="user@example.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">Subject</label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpCustomSubject}
+                    onChange={(e) => setSmtpCustomSubject(e.target.value)}
+                    placeholder="e.g. Account Security Update / Notification"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">Message Body</label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={smtpCustomMessage}
+                    onChange={(e) => setSmtpCustomMessage(e.target.value)}
+                    placeholder="Type your email message here..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-purple-500 custom-sidebar-scrollbar"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={smtpSendingCustom}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black transition cursor-pointer shadow-md shadow-purple-950/40 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {smtpSendingCustom ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sending Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Dispatch Custom Email via Brevo</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SECTION 7: LIVE CHAT SUPPORT */}
       {activeSection === 'support' && (
         <div className="space-y-4">
@@ -1973,10 +2558,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
                 <Megaphone className="w-3.5 h-3.5" />
-                <span>Live Dashboard Notice Bar Preview (ইউজারদের প্রদর্শিত নোটিশ বার)</span>
+                <span>Live Dashboard Notice Bar Preview (User-Facing Header Banner)</span>
               </span>
               <span className="text-[10px] text-slate-400 font-medium">
-                ইউজাররা কর্নারের ক্রস (X) অপশনে চাপ দিয়ে এটি কেটে দিতে পারবে
+                Users can dismiss this notice banner anytime with the close (✕) button
               </span>
             </div>
 
@@ -1985,7 +2570,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               if (!activeNotice) {
                 return (
                   <div className="p-4 rounded-xl border border-dashed border-slate-800 bg-slate-950 text-center text-xs text-slate-500">
-                    বর্তমানে কোনো সক্রিয় নোটিশ বার চালু নেই (No active notice bar currently visible).
+                    No active notice bar currently visible.
                   </div>
                 );
               }
@@ -2032,7 +2617,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <span>Update & Publish Dashboard Notice Bar</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  ছোট বর্ডারের ড্যাশবোর্ড নোটিশ বার আপডেট করুন। এখান থেকে আমাদের সকল আপডেট নোটিশ প্রদান করা যাবে।
+                  Publish an announcement or advisory notice displayed at the top of all user dashboards.
                 </p>
               </div>
             </div>
@@ -2073,7 +2658,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   rows={3}
                   value={updateMessage}
                   onChange={(e) => setUpdateMessage(e.target.value)}
-                  placeholder="Type notice message details (সকল আপডেট নোটিশ এখানে প্রদান করুন)..."
+                  placeholder="Type notice message details for users..."
                   required
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
                 />
@@ -2248,10 +2833,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <div>
               <h3 className="text-base font-black text-white flex items-center gap-2">
                 <Bell className="w-5 h-5 text-cyan-400" />
-                <span>Dispatch User Notification (ইউজারকে মেসেজ ও নোটিফিকেশন আপডেট)</span>
+                <span>Dispatch User Notification</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                এখানে কোনো ইউজারকে মেসেজ পাঠালে তা সরাসরি সেই ইউজারের টপবারের নোটিফিকেশন বেল আইকনে তাৎক্ষণিকভাবে যুক্ত হবে।
+                Send a real-time message or alert that delivers directly into the recipient user's top-bar notification bell.
               </p>
             </div>
 
@@ -2261,7 +2846,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 <div className="sm:col-span-2 space-y-1">
                   <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Select Target Recipient (মেসেজ প্রাপক নির্বাচন করুন)</span>
+                    <span>Select Target Recipient</span>
                   </label>
                   <select
                     value={globalNotifRecipient}
@@ -2322,7 +2907,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs shadow-lg shadow-cyan-950 flex items-center justify-center gap-2 cursor-pointer transition active:scale-98"
               >
                 <Send className="w-4 h-4" />
-                <span>DISPATCH NOTIFICATION TO USER (নোটিফিকেশন পাঠান)</span>
+                <span>DISPATCH NOTIFICATION TO USER</span>
               </button>
             </form>
           </div>
@@ -2525,6 +3110,222 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 Deliver Notification
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CUSTOM SMTP CONFIGURATION */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto custom-sidebar-scrollbar">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">SMTP Gateway Configuration</h3>
+                  <p className="text-[11px] text-slate-400">Manage backend relay credentials and server settings</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfigModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Quick Presets</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfigHost('smtp-relay.brevo.com');
+                    setConfigPort('587');
+                    setConfigSecure(false);
+                    setConfigUser('b969f4001@smtp-brevo.com');
+                    setConfigFrom('"Traffic Analytics" <b969f4001@smtp-brevo.com>');
+                    setConfigProvider('Brevo SMTP Relay');
+                  }}
+                  className={`p-2 rounded-xl border text-xs font-bold transition cursor-pointer text-center ${
+                    configHost.includes('brevo')
+                      ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Brevo Relay
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfigHost('smtp.gmail.com');
+                    setConfigPort('587');
+                    setConfigSecure(false);
+                    setConfigProvider('Gmail SMTP');
+                  }}
+                  className={`p-2 rounded-xl border text-xs font-bold transition cursor-pointer text-center ${
+                    configHost.includes('gmail')
+                      ? 'bg-cyan-950/60 border-cyan-500/60 text-cyan-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Gmail SMTP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfigProvider('Custom SMTP Gateway');
+                  }}
+                  className={`p-2 rounded-xl border text-xs font-bold transition cursor-pointer text-center ${
+                    !configHost.includes('brevo') && !configHost.includes('gmail')
+                      ? 'bg-purple-950/60 border-purple-500/60 text-purple-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Custom Relay
+                </button>
+              </div>
+            </div>
+
+            {/* Server IP Reminder */}
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between text-xs">
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Server Outbound Public IP</span>
+                <p className="font-mono text-emerald-400 font-black">{smtpServerConfig?.serverIp || '34.96.48.153'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(smtpServerConfig?.serverIp || '34.96.48.153');
+                  showToast('Server IP copied');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1 cursor-pointer"
+              >
+                <Copy className="w-3 h-3 text-cyan-400" />
+                <span>Copy</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSmtpConfig} className="space-y-3 pt-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-300">Provider Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={configProvider}
+                    onChange={(e) => setConfigProvider(e.target.value)}
+                    placeholder="e.g. Brevo SMTP Relay"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-300">SMTP Host</label>
+                  <input
+                    type="text"
+                    required
+                    value={configHost}
+                    onChange={(e) => setConfigHost(e.target.value)}
+                    placeholder="smtp-relay.brevo.com"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-300">Port</label>
+                  <input
+                    type="number"
+                    required
+                    value={configPort}
+                    onChange={(e) => setConfigPort(e.target.value)}
+                    placeholder="587"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-300">Encryption</label>
+                  <div className="flex items-center h-[38px] px-3 bg-slate-950 border border-slate-800 rounded-xl">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={configSecure}
+                        onChange={(e) => setConfigSecure(e.target.checked)}
+                        className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                      />
+                      <span>SSL/TLS (Port 465)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">SMTP Username / Login</label>
+                <input
+                  type="text"
+                  required
+                  value={configUser}
+                  onChange={(e) => setConfigUser(e.target.value)}
+                  placeholder="b969f4001@smtp-brevo.com"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">SMTP Password / API Key</label>
+                  <span className="text-[10px] text-slate-500">Leave blank to keep existing key</span>
+                </div>
+                <input
+                  type="password"
+                  value={configPass}
+                  onChange={(e) => setConfigPass(e.target.value)}
+                  placeholder={smtpServerConfig?.maskedPass || 'Enter new key if updating'}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">From Address Header</label>
+                <input
+                  type="text"
+                  required
+                  value={configFrom}
+                  onChange={(e) => setConfigFrom(e.target.value)}
+                  placeholder='"Traffic Analytics" <b969f4001@smtp-brevo.com>'
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingConfig}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md cursor-pointer transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSavingConfig ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save & Update Relay</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

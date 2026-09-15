@@ -1,0 +1,9 @@
+{
+  "host": "smtp-relay.brevo.com",
+  "port": 587,
+  "secure": false,
+  "user": "b969f4001@smtp-brevo.com",
+  "pass": "xsmtpsib-f83c3c38454ecfaa5e6a3fc112b09e1caedd214f76df87398447e9ba73426a1d-Vgp1pWNyS9URRcJ4",
+  "from": "\"Traffic Analytics\" <b969f4001@smtp-brevo.com>",
+  "provider": "Brevo SMTP Relay"
+}

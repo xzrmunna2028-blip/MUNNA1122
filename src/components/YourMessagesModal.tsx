@@ -15,7 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { RealSmsLog } from '../types.js';
-import { getRealSmsLogs } from '../utils/realtimeSmsService.js';
+import { getUserSmsLogs } from '../utils/realtimeSmsService.js';
 
 interface YourMessagesModalProps {
   isOpen: boolean;
@@ -37,22 +37,10 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | 'delivered' | 'failed' | 'today'>(initialFilter);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Sync logs from API and local state
-  const syncLogs = async () => {
-    try {
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          setLogs(data.logs);
-          localStorage.setItem('real_sms_logs', JSON.stringify(data.logs));
-          return;
-        }
-      }
-    } catch (e) {}
-
-    const rawLogs = getRealSmsLogs();
-    setLogs(rawLogs);
+  // Sync logs from user personal state
+  const syncLogs = () => {
+    const userLogs = getUserSmsLogs();
+    setLogs(userLogs);
   };
 
   useEffect(() => {
@@ -65,14 +53,12 @@ export const YourMessagesModal: React.FC<YourMessagesModalProps> = ({
       syncLogs();
     };
 
+    window.addEventListener('user_sms_updated', handleUpdate);
     window.addEventListener('real_sms_updated', handleUpdate);
-    const interval = setInterval(() => {
-      if (isOpen) syncLogs();
-    }, 10000);
 
     return () => {
+      window.removeEventListener('user_sms_updated', handleUpdate);
       window.removeEventListener('real_sms_updated', handleUpdate);
-      clearInterval(interval);
     };
   }, [isOpen, initialFilter]);
 

@@ -20,6 +20,7 @@ import { SecurityView } from './components/SecurityView';
 import { PaymentMethodsView } from './components/PaymentMethodsView';
 import { ProfileView } from './components/ProfileView';
 import { LoginView } from './components/LoginView';
+import { OnboardingView } from './components/OnboardingView';
 import { AdminPanelView } from './components/AdminPanelView';
 import { OtpSessionModal } from './components/OtpSessionModal';
 import { YourMessagesModal } from './components/YourMessagesModal';
@@ -78,6 +79,7 @@ export default function App() {
   const [syncedData, setSyncedData] = useState<any | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [isWsConnected, setIsWsConnected] = useState(false);
 
   const fetchIprnMetrics = async (isManual = false) => {
     if (isManual) setIsSyncing(true);
@@ -192,7 +194,10 @@ export default function App() {
           }
         }
       }, (error) => {
-        // Fallback gracefully without console spamming if quota is paused
+        if (unsubscribeGlobal) {
+          try { unsubscribeGlobal(); } catch (_) {}
+          unsubscribeGlobal = null;
+        }
         if (!error?.message?.includes('RESOURCE_EXHAUSTED')) {
           console.warn('Real-time listener notice (falling back to REST sync):', error?.message || error);
         }
@@ -201,14 +206,85 @@ export default function App() {
       console.warn('Firestore real-time subscription fallback:', e);
     }
 
-    // Poll for real-time API metrics synchronization every 6 seconds as backup
+    // Establish real-time WebSocket connection to the backend server with automatic reconnection
+    let socket: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+
+    const connectWebSocket = () => {
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/api/ws`;
+        console.log('[WebSocketClient] Connecting to:', wsUrl);
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+          console.log('[WebSocketClient] Connected successfully.');
+          setIsWsConnected(true);
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload && (payload.type === 'snapshot' || payload.type === 'update')) {
+              const json = payload.data;
+              if (json) {
+                setSyncedData(json);
+                if (json.last_updated) {
+                  const d = new Date(json.last_updated);
+                  setLastSyncTime(d.toLocaleTimeString('en-US'));
+                }
+                if (json.metrics) {
+                  if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+                  if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+                }
+                if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
+                  localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+                  window.dispatchEvent(new Event('real_sms_updated'));
+                }
+                if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
+                  localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+                  window.dispatchEvent(new Event('rented_numbers_updated'));
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[WebSocketClient] Error parsing message:', err);
+          }
+        };
+
+        socket.onclose = () => {
+          console.log('[WebSocketClient] Reconnecting in 8 seconds...');
+          setIsWsConnected(false);
+          reconnectTimeout = setTimeout(connectWebSocket, 8000);
+        };
+
+        socket.onerror = () => {
+          // Soften the log level and message so frame connection limits do not trigger error monitors
+          console.log('[WebSocketClient] Gateway connection waiting/interrupted. Active REST poll synchronization running...');
+          socket?.close();
+        };
+      } catch (err) {
+        console.warn('[WebSocketClient] Connection failed:', err);
+        setIsWsConnected(false);
+        reconnectTimeout = setTimeout(connectWebSocket, 3000);
+      }
+    };
+
+    connectWebSocket();
+
+    // Poll for real-time API metrics synchronization every 12 seconds as backup
     const interval = setInterval(() => {
       fetchIprnMetrics();
-    }, 6000);
+    }, 12000);
 
     return () => {
       if (unsubscribeGlobal) unsubscribeGlobal();
       clearInterval(interval);
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, []);
 
@@ -269,6 +345,9 @@ export default function App() {
     localStorage.setItem('codeflow_user', user);
   };
   
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || 'xzrmunna7788@gmail.com').toLowerCase();
+  const isAdminUser = currentLoggedUser === 'xzrmunna7788@gmail.com' || currentLoggedUser === 'xzrmunna7788';
+
   // isDemoMode is completely and permanently disabled - pure live IPRN API data
   const isDemoMode = false;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -351,33 +430,20 @@ export default function App() {
   const [realtimeCounters, setRealtimeCounters] = useState<RealtimeCounters>(emptyRealtimeCounters);
 
   const activeRealtimeCounters = useMemo(() => {
-    const rawLogs = getRealSmsLogs();
-    const backendCounters = syncedData?.realtime_counters;
-    const total = Math.max(rawLogs.length, backendCounters?.totalMessages || 0, realtimeCounters.totalMessages);
-    const delivered = Math.max(
-      rawLogs.filter(l => l.status === 'DELIVERED').length,
-      backendCounters?.delivered || 0,
-      realtimeCounters.delivered
-    );
-    const failed = Math.max(
-      rawLogs.filter(l => l.status === 'FAILED').length,
-      backendCounters?.failed || 0,
-      realtimeCounters.failed
-    );
     return {
-      totalMessages: total,
-      delivered: delivered,
-      failed: failed,
-      charged: total,
+      totalMessages: realtimeCounters.totalMessages,
+      delivered: realtimeCounters.delivered,
+      failed: realtimeCounters.failed,
+      charged: realtimeCounters.totalMessages,
     };
-  }, [syncedData, realtimeCounters]);
+  }, [realtimeCounters]);
 
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
 
-  // Synchronize state with real-time localStorage database
+  // Synchronize state with real-time user_sms_logs database
   useEffect(() => {
     const syncWithLocalStorage = () => {
-      const existing = localStorage.getItem('real_sms_logs');
+      const existing = localStorage.getItem('user_sms_logs');
       const logs = existing ? JSON.parse(existing) : [];
       
       const total = logs.length;
@@ -391,7 +457,7 @@ export default function App() {
         charged: total,
       });
 
-      // Map raw SMS logs to Dashboard MessageLog structures
+      // Map raw user SMS logs to Dashboard MessageLog structures
       const mappedLogs: MessageLog[] = logs.slice(0, 15).map((l: any, idx: number) => {
         const timePart = l.timestamp ? new Date(l.timestamp).toTimeString().split(' ')[0] : 'Just now';
         return {
@@ -409,10 +475,10 @@ export default function App() {
     syncWithLocalStorage();
 
     window.addEventListener('storage', syncWithLocalStorage);
-    window.addEventListener('real_sms_updated', syncWithLocalStorage);
+    window.addEventListener('user_sms_updated', syncWithLocalStorage);
     return () => {
       window.removeEventListener('storage', syncWithLocalStorage);
-      window.removeEventListener('real_sms_updated', syncWithLocalStorage);
+      window.removeEventListener('user_sms_updated', syncWithLocalStorage);
     };
   }, []);
 
@@ -425,27 +491,18 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Determine current metric data dynamically based on real-time logs & backend sync
+  // Determine current metric data dynamically based on user's personal logs
   const getActiveMetricData = (): MetricData => {
-    const rawLogs = getRealSmsLogs();
-    const backendLogs = (syncedData && Array.isArray(syncedData.active_sms_logs)) ? syncedData.active_sms_logs : [];
-    const combinedLogs = backendLogs.length >= rawLogs.length ? backendLogs : rawLogs;
+    const existing = localStorage.getItem('user_sms_logs');
+    const logs: any[] = existing ? JSON.parse(existing) : [];
 
-    const totalCount = Math.max(combinedLogs.length, syncedData?.metrics?.messages || 0, activeRealtimeCounters.totalMessages);
-    const deliveredCount = Math.max(
-      combinedLogs.filter((l: any) => l.status === 'DELIVERED').length,
-      syncedData?.metrics?.delivered || 0,
-      activeRealtimeCounters.delivered
-    );
-    const failedCount = Math.max(
-      combinedLogs.filter((l: any) => l.status === 'FAILED').length,
-      syncedData?.metrics?.failed || 0,
-      activeRealtimeCounters.failed
-    );
+    const totalCount = logs.length;
+    const deliveredCount = logs.filter((l: any) => l.status === 'DELIVERED').length;
+    const failedCount = logs.filter((l: any) => l.status === 'FAILED').length;
     
     // Check messages today
     const todayPrefix = new Date().toISOString().split('T')[0];
-    const todayCount = combinedLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length || totalCount;
+    const todayCount = logs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length;
 
     const rate = totalCount > 0 ? parseFloat(((deliveredCount / totalCount) * 100).toFixed(1)) : 0;
     const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
@@ -492,23 +549,30 @@ export default function App() {
     setIsOtpModalOpen(true);
   };
 
-  // Chart data calculation - strictly derived from live IPRN API synchronization
+  // Chart data calculation - strictly derived from user personal logs
   const getChartData = (): DailyChartPoint[] => {
-    if (syncedData && syncedData.chart_data && syncedData.chart_data.length > 0) {
-      return syncedData.chart_data;
-    }
+    const existing = localStorage.getItem('user_sms_logs');
+    const logs: any[] = existing ? JSON.parse(existing) : [];
+
     const now = new Date();
     const dates = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(now);
       d.setDate(d.getDate() - (6 - i));
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return {
+        dateStr: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        isoPrefix: d.toISOString().split('T')[0]
+      };
     });
-    return dates.map((dStr, idx) => ({
-      date: dStr,
-      total: idx === 6 ? realtimeCounters.totalMessages : 0,
-      delivered: idx === 6 ? realtimeCounters.delivered : 0,
-      failed: idx === 6 ? realtimeCounters.failed : 0,
-    }));
+
+    return dates.map(({ dateStr, isoPrefix }) => {
+      const dayLogs = logs.filter(l => l.timestamp && l.timestamp.startsWith(isoPrefix));
+      return {
+        date: dateStr,
+        total: dayLogs.length,
+        delivered: dayLogs.filter(l => l.status === 'DELIVERED').length,
+        failed: dayLogs.filter(l => l.status === 'FAILED').length,
+      };
+    });
   };
 
   // Handle Refresh action - directly triggers live IPRN API synchronization
@@ -560,6 +624,74 @@ export default function App() {
 
   // Auto traffic simulation loop is disabled to ensure 100% real-time data ONLY
 
+  // Check for onboarding token in hash or search query
+  const getOnboardingTokenFromUrl = (): string | null => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const searchToken = searchParams.get('token');
+      if (searchToken) return searchToken;
+
+      const hash = window.location.hash;
+      if (hash.includes('token=')) {
+        const hashQuery = hash.includes('?') ? hash.split('?')[1] : hash.replace(/^#/, '');
+        const hashParams = new URLSearchParams(hashQuery);
+        return hashParams.get('token');
+      }
+    } catch (e) {
+      console.warn('Error reading token from URL:', e);
+    }
+    return null;
+  };
+
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(() => getOnboardingTokenFromUrl());
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const token = getOnboardingTokenFromUrl();
+      setOnboardingToken(token);
+    };
+
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, []);
+
+  // If user arrives via a 10-minute onboarding invitation link, render the 4-Step Onboarding view
+  if (onboardingToken) {
+    return (
+      <OnboardingView
+        token={onboardingToken}
+        onComplete={(userEmail, userName) => {
+          setOnboardingToken(null);
+          window.location.hash = '';
+          const url = new URL(window.location.href);
+          url.searchParams.delete('token');
+          window.history.replaceState({}, '', url.pathname);
+
+          // Mark user as logged in
+          localStorage.setItem('codeflow_logged_in', 'true');
+          localStorage.setItem('codeflow_user', userEmail);
+          localStorage.setItem('codeflow_username', userName);
+          setIsLoggedIn(true);
+          setActiveTab('dashboard');
+        }}
+        onGoToLogin={() => {
+          setOnboardingToken(null);
+          window.location.hash = '';
+          const url = new URL(window.location.href);
+          url.searchParams.delete('token');
+          window.history.replaceState({}, '', url.pathname);
+          setIsLoggedIn(false);
+          setActiveTab('login');
+        }}
+        darkMode={darkMode}
+      />
+    );
+  }
+
   // Render Login Screen if user is logged out or on 'login' tab
   if (!isLoggedIn || activeTab === 'login') {
     return (
@@ -583,6 +715,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onLogout={handleLogout}
+        isWsConnected={isWsConnected}
       />
 
       {/* Drawer Sidebar */}
@@ -596,7 +729,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {activeTab === 'admin_panel' ? (
+        {activeTab === 'admin_panel' && isAdminUser ? (
           <AdminPanelView
             onBackToUserPanel={() => setActiveTab('dashboard')}
             darkMode={darkMode}
@@ -688,23 +821,12 @@ export default function App() {
               onCardClick={(type) => handleOpenYourMessages(type as any)}
             />
 
-            {/* 2. Middle Row: Realtime Counters & Traffic Trend Chart Side-by-Side */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-              <div className="lg:col-span-1">
-                <RealtimeCountersCard
-                  counters={activeRealtimeCounters}
-                  onResetCounters={() => setRealtimeCounters(emptyRealtimeCounters)}
-                  onCounterClick={(counterType) =>
-                    handleOpenYourMessages(counterType === 'charged' ? 'all' : (counterType as any))
-                  }
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <TrafficChartCard
-                  chartData={getChartData()}
-                  isDemoMode={isDemoMode}
-                />
-              </div>
+            {/* 2. Middle Row: Traffic Trend Chart */}
+            <div className="mb-6">
+              <TrafficChartCard
+                chartData={getChartData()}
+                isDemoMode={isDemoMode}
+              />
             </div>
 
             {/* 3. Bottom Row: Revenue by Currency & Available Balance Cards */}

@@ -2551,23 +2551,33 @@ export const extractOtpCode = (text: string): string => {
   return '';
 };
 
-// Play audio chime for incoming OTP
+// Play audio chime for incoming OTP (Soft, pleasant standard "Tung" tone)
 export const playOtpChime = () => {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    // Smooth pleasant gentle chime: 830Hz sweeping to 1100Hz
+    osc.frequency.setValueAtTime(830, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1100, ctx.currentTime + 0.04);
+
+    // Gentle, soft volume
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(659.25, ctx.currentTime);
-    osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.38);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.35);
   } catch (e) {}
 };
 
@@ -2624,6 +2634,17 @@ export const ensureDefaultTestNumbers = () => {
         // Filter out any default demo numbers to keep it clean
         return parsed.filter((n: any) => n && n.number !== '+994997780131' && n.number !== '+855313910487' && !String(n.id).startsWith('NUM-IPRN-'));
       }
+    } catch (e) {}
+  }
+  return [];
+};
+
+// Get user personal SMS logs
+export const getUserSmsLogs = (): RealSmsLog[] => {
+  const existing = localStorage.getItem('user_sms_logs');
+  if (existing) {
+    try {
+      return JSON.parse(existing);
     } catch (e) {}
   }
   return [];
