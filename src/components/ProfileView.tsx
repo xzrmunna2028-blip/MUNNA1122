@@ -267,6 +267,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
+      {/* Congratulations & Account Active Banner */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-900 border border-emerald-500/40 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+            <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-white">
+                Congratulations, {username}! 🎉
+              </h3>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black tracking-wide">
+                ACTIVE & VERIFIED
+              </span>
+            </div>
+            <p className="text-xs text-slate-300">
+              আপনার অ্যাকাউন্টটি সফলভাবে অনুমোদিত ও সক্রিয় রয়েছে। আপনার প্যানেলের সকল টুলস ও এসএমএস সুবিধা ব্যবহারের জন্য উন্মুক্ত।
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+          <a
+            href="https://t.me/super_x_sms_support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/60 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>লাইভ সাপোর্ট</span>
+          </a>
+        </div>
+      </div>
+
       {/* 1. Enhanced Header Banner Card with Agent Account Badge */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xs overflow-hidden">
         <div className="bg-gradient-to-b from-[#65a30d] to-[#4d7c0f] p-8 sm:p-10 flex flex-col items-center justify-center text-center text-white space-y-4 relative overflow-hidden">

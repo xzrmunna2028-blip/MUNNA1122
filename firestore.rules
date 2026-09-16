@@ -62,5 +62,25 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isValidId(logId) && isValidActivityLog(incoming());
     }
+
+    match /custom_terminations/{code} {
+      allow read, write: if true;
+      
+      match /pool_chunks/{chunkId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /registered_users/{email} {
+      allow read, write: if true;
+    }
+
+    match /invitations/{token} {
+      allow read, write: if true;
+    }
+
+    match /broadcast_notices/{noticeId} {
+      allow read, write: if true;
+    }
   }
 }

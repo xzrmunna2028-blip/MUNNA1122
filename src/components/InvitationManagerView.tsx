@@ -115,13 +115,11 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
     error?: string;
   } | null>(null);
 
-  // Helper to ensure invitation link uses clean domain
-  const getCleanLink = (inv: { link?: string; token: string }) => {
-    if (inv.link && inv.link.trim() && !inv.link.includes('run.app') && !inv.link.includes('localhost') && !inv.link.includes('ais-')) {
-      return inv.link.trim();
-    }
+  // Helper to ensure invitation link uses clean domain without email in URL
+  const getCleanLink = (inv?: { token?: string }) => {
     const base = (customBaseUrl || 'https://codeflowsms.vercel.app').trim().replace(/\/+$/, '');
-    return `${base}/#onboarding?token=${inv.token}`;
+    const tok = inv?.token || ('inv_cf_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8));
+    return `${base}/#onboarding?token=${tok}`;
   };
 
   // Fetch invitations from server
@@ -268,8 +266,8 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
     const now = Date.now();
     const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
     const expiresAt = now + FIFTEEN_MINUTES_MS;
-    const localToken = 'inv_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-    const generatedUrl = `${cleanBaseUrl}/#onboarding?token=${localToken}&email=${encodeURIComponent(cleanEmail)}&name=${encodeURIComponent(cleanName)}&role=${encodeURIComponent(roleVal)}&bal=${balVal}&exp=${expiresAt}`;
+    const localToken = 'inv_cf_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
+    const generatedUrl = `${cleanBaseUrl}/#onboarding?token=${localToken}&ref=cf${localToken.replace(/^inv_/, '')}`;
 
     const immediateInvite: InvitationItem = {
       token: localToken,
@@ -306,7 +304,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
 
     // 2. Synchronize with server backend (safe fetch prevents any JSON parse crash)
     try {
-      const { ok, data } = await safeFetchJson('/api/create-invitation', {
+      const { ok, data } = await safeFetchJson(`/api/create-invitation?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -564,35 +562,38 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
             </div>
           </div>
 
-          {/* Card 2: Direct Account Creation Link for Emails */}
-          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition space-y-3.5">
+          {/* Card 2: Clean Custom Branded Access Link */}
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-cyan-500/40 transition space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-400 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                ২. অ্যাকাউন্ট ক্রিয়েট লিংক (User Email Registration Link)
+              <span className="text-xs font-bold text-cyan-400 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                ২. গোপনীয় পোর্টাল লিংক (Clean Custom VIP Registration Link)
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-mono">
-                CREATE-ACCOUNT
+              <span className="px-2 py-0.5 rounded-md bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px] font-mono">
+                SECURE-ACCESS
               </span>
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              ইউজারদের মেইলে এই লিংকটি পাঠান। লিংকে ক্লিক করার সাথে সাথে সরাসরি একাউন্ট খোলার স্ক্রিন চলে আসবে।
+              ইউজারদের এই ক্লিন লিঙ্কটি পাঠান। কোনো টেকনিক্যাল জটিলতা ছাড়া সরাসরি ৪-স্টেপ রেজিস্ট্রেশন ফর্ম খুলবে।
             </p>
 
             <div className="flex items-center gap-2 bg-slate-900/90 p-2 rounded-xl border border-slate-800">
               <input
                 type="text"
                 readOnly
-                value={`${customBaseUrl}/#create-account`}
-                className="bg-transparent text-emerald-300 font-mono text-xs w-full focus:outline-none select-all"
+                value={`${customBaseUrl}/#access`}
+                className="bg-transparent text-cyan-300 font-mono text-xs w-full focus:outline-none select-all"
               />
               <button
                 type="button"
-                onClick={() => handleCopyText(`${customBaseUrl}/#create-account`, 'Create Account Link')}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer"
+                onClick={() => {
+                  const link = `${customBaseUrl}/#access`;
+                  handleCopyText(link, 'Clean Portal Link');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer"
               >
-                {copiedLinkType === 'Create Account Link' ? (
+                {copiedLinkType === 'Clean Portal Link' ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-white" />
                     <span>কপি হয়েছে!</span>
@@ -605,11 +606,11 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 )}
               </button>
               <a
-                href={`${customBaseUrl}/#create-account`}
+                href={`${customBaseUrl}/#access`}
                 target="_blank"
                 rel="noreferrer"
                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
-                title="নতুন ট্যাবে ওপেন করুন"
+                title="নতুন ট্যাবে রেজিস্ট্রেশন ফর্ম ওপেন করুন"
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
@@ -663,11 +664,11 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h4 className="text-sm font-black text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-lime-400" />
-              <span>Generate New 5-Minute Link</span>
+              <span>Generate User Onboarding Link</span>
             </h4>
-            <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>5-Min Expiry</span>
+            <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Permanent Active</span>
             </span>
           </div>
 
@@ -685,7 +686,7 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 className="w-full px-4 py-3 bg-slate-950 border border-slate-800 focus:border-lime-500 rounded-xl text-sm font-semibold text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
               />
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                ইউজারের ইমেইল দিয়ে সাবমিট করলেই নিচে স্বয়ংক্রিয়ভাবে অ্যাকাউন্ট তৈরির কাস্টম ইউআরএল জেনারেট ও কপি হয়ে যাবে।
+                ইউজারের ইমেইল দিয়ে সাবমিট করলেই নিচে স্বয়ংক্রিয়ভাবে অ্যাকাউন্ট তৈরির কাস্টম অনবোর্ডিং ইউআরএল জেনারেট ও কপি হয়ে যাবে।
               </p>
             </div>
 
@@ -697,12 +698,12 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Generating Secure Link...</span>
+                  <span>Generating Onboarding Link...</span>
                 </>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>Generate 5-Minute Invitation Link</span>
+                  <span>Generate User Onboarding Link</span>
                 </>
               )}
             </button>
@@ -715,27 +716,22 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h4 className="text-sm font-black text-white flex items-center gap-2">
                 <Link2 className="w-4 h-4 text-cyan-400" />
-                <span>Generated Invitation Output</span>
+                <span>Generated Onboarding Output</span>
               </h4>
               {activeInvite && (
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-black flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Active Now
+                  Active & Permanent
                 </span>
               )}
             </div>
 
             {activeInvite ? (
               <div className="space-y-4 animate-fade-in">
-                {/* Countdown Box */}
-                <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 text-xs text-amber-200">
-                    <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Time remaining before link expires:</span>
-                  </div>
-                  <span className="px-3 py-1 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-black text-sm">
-                    {formatSeconds(Math.max(0, Math.floor((activeInvite.expiresAt - Date.now()) / 1000)))}
-                  </span>
+                {/* Active Info Badge */}
+                <div className="p-3.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-200">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>This link is active and permanent. The user can open it at any time to create an account.</span>
                 </div>
 
                 {/* Recipient Details Pill */}
@@ -960,11 +956,9 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                 </tr>
               ) : (
                 invitations.map((inv) => {
-                  const now = Date.now();
-                  const remainingSec = Math.max(0, Math.floor((inv.expiresAt - now) / 1000));
-                  const isExpired = now > inv.expiresAt || inv.status === 'expired';
                   const isUsed = inv.status === 'used';
-                  const isActive = !isExpired && !isUsed;
+                  const isRevoked = inv.status === 'revoked' || inv.status === 'expired';
+                  const isActive = !isUsed && !isRevoked;
 
                   return (
                     <tr key={inv.token} className="hover:bg-slate-950/40 transition">
@@ -992,11 +986,11 @@ export const InvitationManagerView: React.FC<InvitationManagerViewProps> = ({ sh
                         ) : isActive ? (
                           <span className="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-black font-mono flex items-center gap-1.5 w-fit">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                            {formatSeconds(remainingSec)} remaining
+                            Active & Permanent
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-red-950 text-red-400 border border-red-800 text-[10px] font-extrabold w-fit">
-                            Expired
+                          <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-extrabold w-fit">
+                            Revoked
                           </span>
                         )}
                       </td>

@@ -65,6 +65,58 @@
         "realtime_counters": { "type": "object" },
         "chart_data": { "type": "array" }
       }
+    },
+    "UserRecord": {
+      "title": "Registered User",
+      "description": "User account registration record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "pass": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "created": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["name", "email", "status"]
+    },
+    "InvitationRecord": {
+      "title": "Invitation Link",
+      "description": "One-time registration invitation token",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "balance": { "type": "number" },
+        "inviter": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "expiresAt": { "type": "number" },
+        "status": { "type": "string" },
+        "link": { "type": "string" }
+      },
+      "required": ["token", "email", "name", "role", "balance", "createdAt", "expiresAt", "status", "link"]
+    },
+    "BroadcastRecord": {
+      "title": "Broadcast Notice",
+      "description": "Notice board message for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "category": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "author": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "message", "category", "targetRole", "pinned", "createdAt"]
     }
   },
   "firestore": {
@@ -83,6 +135,18 @@
     "activity_logs/{logId}": {
       "schema": "ActivityLog",
       "description": "Collection of system audit logs"
+    },
+    "registered_users/{email}": {
+      "schema": "UserRecord",
+      "description": "Registered users of the application"
+    },
+    "invitations/{token}": {
+      "schema": "InvitationRecord",
+      "description": "Active and expired invitation tokens"
+    },
+    "broadcast_notices/{noticeId}": {
+      "schema": "BroadcastRecord",
+      "description": "Global and targeted broadcast notifications"
     }
   }
 }

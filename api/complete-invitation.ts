@@ -31,7 +31,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const cleanToken = String(token).trim();
-    const invitations = AuthStore.getInvitations();
+    const invitations = await AuthStore.getInvitations();
     const inv = invitations.find((i: any) => i.token.trim().toLowerCase() === cleanToken.toLowerCase());
 
     const targetEmail = inv ? inv.email : '';
@@ -41,7 +41,7 @@ export default async function handler(req: any, res: any) {
     if (inv) {
       // Mark as used
       inv.status = 'used';
-      AuthStore.saveInvitation(inv);
+      await AuthStore.saveInvitation(inv);
     }
 
     // Save user as Pending for Admin approval
@@ -55,7 +55,7 @@ export default async function handler(req: any, res: any) {
         status: 'Pending',
         createdAt: new Date().toISOString()
       };
-      AuthStore.saveUser(newUser);
+      await AuthStore.saveUser(newUser);
     }
 
     return res.status(200).json({

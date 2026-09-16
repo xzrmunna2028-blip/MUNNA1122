@@ -22,7 +22,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const users = AuthStore.getUsers();
+    const users = await AuthStore.getUsers();
     const foundUser = users.find(u => u.email.toLowerCase().trim() === cleanEmail);
 
     if (!foundUser) {

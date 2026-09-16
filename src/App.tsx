@@ -120,14 +120,19 @@ const getTabFromUrl = (): string | null => {
   const clean = rawHash.replace(/^#\/?/, '').split('?')[0].trim().toLowerCase();
 
   if (
+    clean.includes('onboarding') ||
+    path.includes('/onboarding')
+  ) {
+    return 'onboarding';
+  }
+
+  if (
     clean.includes('create-account') ||
     clean.includes('createaccount') ||
     clean.includes('register') ||
     clean.includes('signup') ||
     path.includes('/create-account') ||
-    path.includes('/createaccount') ||
     path.includes('/register') ||
-    path.includes('/signup') ||
     path.includes('/login')
   ) {
     return 'login';
@@ -206,6 +211,23 @@ export default function App() {
 
   // Active SMS (Client Active SMS) initial filter for redirection
   const [activeSmsFilter, setActiveSmsFilter] = useState<'all' | 'delivered' | 'failed' | 'today' | null>(null);
+
+  // Security Kickout & Ban Alert Modal
+  const [kickedModal, setKickedModal] = useState<{ open: boolean; title: string; message: string } | null>(null);
+
+  // Global Maintenance Mode State
+  const [maintenanceState, setMaintenanceState] = useState<{
+    enabled: boolean;
+    title: string;
+    message: string;
+    estimatedEndTime?: string;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem('codeflow_maintenance_mode');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { enabled: false, title: 'System Maintenance', message: 'We are currently performing routine maintenance.' };
+  });
 
   // IPRN Website Data Sync States
   const [syncedData, setSyncedData] = useState<any | null>(null);
@@ -381,9 +403,76 @@ export default function App() {
               }
             }
 
-            // Handle real-time user status changes
+            // Handle real-time maintenance updates
+            if (payload && (payload.type === 'maintenance_updated' || payload.maintenance)) {
+              const maint = payload.maintenance;
+              if (maint) {
+                setMaintenanceState(maint);
+                localStorage.setItem('codeflow_maintenance_mode', JSON.stringify(maint));
+              }
+            }
+
+            // Handle real-time user status changes & kickout/ban detection
             if (payload && (payload.type === 'users_updated' || payload.type === 'user_pending_registered' || payload.registeredUsers)) {
               window.dispatchEvent(new CustomEvent('codeflow_users_updated', { detail: payload }));
+
+              const myEmail = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+              if (myEmail && payload.users && Array.isArray(payload.users)) {
+                const me = payload.users.find((u: any) => u.email?.toLowerCase().trim() === myEmail);
+                if (me && (me.status === 'Banned' || me.status === 'Suspended')) {
+                  localStorage.removeItem('codeflow_logged_in');
+                  localStorage.removeItem('codeflow_user');
+                  setIsLoggedIn(false);
+                  setActiveTab('login');
+                  setKickedModal({
+                    open: true,
+                    title: me.status === 'Banned' ? 'Account Banned' : 'Account Suspended',
+                    message: `Your account status has been changed to ${me.status} by Administrator. Current session terminated immediately.`,
+                  });
+                }
+              }
+            }
+
+            // Handle direct user kick / ban / deletion broadcast across all open tabs/devices
+            if (payload && (payload.type === 'user_kicked' || payload.type === 'user_banned' || payload.type === 'user_deleted')) {
+              const myEmail = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+              const targetKicked = (payload.kickedEmail || payload.bannedEmail || payload.deletedEmail || '').toLowerCase().trim();
+
+              if (myEmail && targetKicked && myEmail === targetKicked) {
+                localStorage.removeItem('codeflow_logged_in');
+                localStorage.removeItem('codeflow_user');
+                setIsLoggedIn(false);
+                setActiveTab('login');
+                setKickedModal({
+                  open: true,
+                  title: payload.type === 'user_banned' ? 'Account Banned' : payload.type === 'user_deleted' ? 'Account Deleted' : 'Session Terminated',
+                  message: payload.reason === 'ACCOUNT_BANNED'
+                    ? 'Your account has been banned by Administrator. Access is blocked.'
+                    : payload.reason === 'ACCOUNT_SUSPENDED'
+                    ? 'Your account has been suspended by Administrator.'
+                    : payload.reason === 'ACCOUNT_DELETED'
+                    ? 'Your account has been deleted by Administrator.'
+                    : 'Your session was terminated by Administrator.',
+                });
+              }
+            }
+
+            // Handle real-time push notifications sent from admin to user
+            if (payload && (payload.type === 'user_notification' || payload.notification)) {
+              const notif = payload.notification;
+              if (notif) {
+                const target = (payload.targetEmail || notif.recipient || 'all').toLowerCase().trim();
+                const myEmail = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+                if (target === 'all' || target === myEmail) {
+                  setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+                  try {
+                    const existing = localStorage.getItem('codeflow_user_notifications');
+                    const parsed = existing ? JSON.parse(existing) : [];
+                    localStorage.setItem('codeflow_user_notifications', JSON.stringify([notif, ...parsed.filter((n: any) => n.id !== notif.id)]));
+                    window.dispatchEvent(new Event('codeflow_notifications_updated'));
+                  } catch (e) {}
+                }
+              }
             }
 
             // Handle real-time user workspace synchronization across sessions/devices
@@ -867,29 +956,45 @@ export default function App() {
   const getOnboardingTokenFromUrl = (): string | null => {
     if (typeof window === 'undefined') return null;
     try {
-      // 1. Direct query parameter: ?token=inv_xxx
-      const searchParams = new URLSearchParams(window.location.search);
-      const searchToken = searchParams.get('token');
-      if (searchToken && searchToken.trim()) return searchToken.trim();
-
-      // 2. Hash parameters: #onboarding?token=inv_xxx, #/onboarding?token=inv_xxx, #token=inv_xxx
+      const href = window.location.href || '';
       const hash = window.location.hash || '';
-      if (hash.includes('token=')) {
-        const queryIndex = hash.indexOf('?');
-        if (queryIndex !== -1) {
-          const hashParams = new URLSearchParams(hash.substring(queryIndex + 1));
-          const tok = hashParams.get('token');
-          if (tok && tok.trim()) return tok.trim();
-        }
-        const match = hash.match(/[?&#]token=([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) return match[1].trim();
-        const fallbackMatch = hash.match(/token=([a-zA-Z0-9_-]+)/);
-        if (fallbackMatch && fallbackMatch[1]) return fallbackMatch[1].trim();
+      const search = window.location.search || '';
+
+      const searchParams = new URLSearchParams(search);
+      let token = searchParams.get('token') || searchParams.get('ref') || searchParams.get('code');
+      if (token && token.trim()) return token.trim();
+
+      if (hash.includes('?')) {
+        const hashParams = new URLSearchParams(hash.substring(hash.indexOf('?') + 1));
+        token = hashParams.get('token') || hashParams.get('ref') || hashParams.get('code');
+        if (token && token.trim()) return token.trim();
       }
 
-      // 3. Fallback regex on full URL
-      const fullMatch = window.location.href.match(/[?&#]token=([a-zA-Z0-9_-]+)/);
+      const fullMatch = href.match(/[?&#](?:token|ref|code)=([a-zA-Z0-9_-]+)/i);
       if (fullMatch && fullMatch[1]) return fullMatch[1].trim();
+
+      const lowerHash = hash.toLowerCase();
+      const lowerHref = href.toLowerCase();
+      if (
+        lowerHash.includes('onboarding') ||
+        lowerHash.includes('create-account') ||
+        lowerHash.includes('createaccount') ||
+        lowerHash.includes('register') ||
+        lowerHash.includes('signup') ||
+        lowerHash.includes('portal') ||
+        lowerHash.includes('access') ||
+        lowerHash.includes('connect') ||
+        lowerHash.includes('auth-direct') ||
+        lowerHash.includes('vip') ||
+        lowerHref.includes('onboarding') ||
+        lowerHref.includes('create-account') ||
+        lowerHref.includes('createaccount') ||
+        lowerHref.includes('register') ||
+        lowerHref.includes('signup') ||
+        lowerHref.includes('token=')
+      ) {
+        return 'inv_active_onboarding';
+      }
     } catch (e) {
       console.warn('Error reading token from URL:', e);
     }
@@ -1121,6 +1226,58 @@ export default function App() {
 
       {/* Global Welcome / Telegram Updates Notice Popup Banner */}
       <WelcomeNoticeBanner darkMode={darkMode} />
+
+      {/* Global Maintenance Mode Lock Screen for Non-Admin Users */}
+      {maintenanceState.enabled && !isAdminUser && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-amber-500/40 rounded-3xl p-8 text-center shadow-2xl space-y-5 animate-fade-in">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <RefreshCw className="w-8 h-8 animate-spin" />
+            </div>
+            <div>
+              <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 inline-block mb-2">
+                System Under Maintenance
+              </span>
+              <h2 className="text-2xl font-black text-white">{maintenanceState.title || 'Scheduled System Maintenance'}</h2>
+              <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+                {maintenanceState.message || 'We are currently upgrading server systems and database optimizations. Access will resume shortly.'}
+              </p>
+              {maintenanceState.estimatedEndTime && (
+                <div className="mt-4 p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-amber-300/90 font-mono">
+                  Estimated Completion: {maintenanceState.estimatedEndTime}
+                </div>
+              )}
+            </div>
+            <div className="pt-2 text-xs text-slate-500">
+              Live updates are running automatically. You do not need to refresh.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kickout / Ban Real-Time Notice Modal */}
+      {kickedModal?.open && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-rose-500/40 rounded-3xl p-6 text-center shadow-2xl space-y-4 animate-fade-in">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+              <X className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white">{kickedModal.title}</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">{kickedModal.message}</p>
+            </div>
+            <button
+              onClick={() => {
+                setKickedModal(null);
+                setActiveTab('login');
+              }}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition cursor-pointer"
+            >
+              Acknowledge & Return to Login
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

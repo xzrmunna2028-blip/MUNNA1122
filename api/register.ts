@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
 
-    const users = AuthStore.getUsers();
+    const users = await AuthStore.getUsers();
     const existing = users.find(u => u.email.toLowerCase().trim() === cleanEmail);
 
     if (existing) {
@@ -47,7 +47,7 @@ export default async function handler(req: any, res: any) {
       createdAt: new Date().toISOString()
     };
 
-    AuthStore.saveUser(newUser);
+    await AuthStore.saveUser(newUser);
 
     return res.status(201).json({
       success: true,

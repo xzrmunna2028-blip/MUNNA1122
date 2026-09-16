@@ -63,6 +63,39 @@ interface TerminationOption {
   };
 }
 
+// Helpers to standardize country and operator/service display labels in a flat layout
+export const getCleanCountryName = (c: string): string => {
+  if (!c) return 'Global';
+  return c
+    .split(' ')
+    .map(word => {
+      const w = word.trim();
+      if (!w) return '';
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
+    .filter(Boolean)
+    .join(' ');
+};
+
+export const getCleanOperatorName = (op: string): string => {
+  if (!op) return 'WhatsApp';
+  const lower = op.toLowerCase();
+  if (lower.includes('whatsapp')) return 'WhatsApp';
+  if (lower.includes('telegram')) return 'Telegram';
+  if (lower.includes('viber')) return 'Viber';
+  if (lower.includes('imo')) return 'IMO';
+  if (lower.includes('google')) return 'Google';
+  if (lower.includes('facebook')) return 'Facebook';
+  
+  // Clean up any common trailing test labels like "i said", "i side", etc.
+  const cleaned = op.replace(/(i said|i side|site|said|says|side|file|numbers|file numbers|test|dummy)/gi, '').trim();
+  if (!cleaned) {
+    const firstWord = op.trim().split(/\s+/)[0];
+    return firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
+  }
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
+
 // Normalizes raw phone number entries from Excel / CSV / Text to standard E.164
 export const normalizePhoneNumber = (
   raw: any,
@@ -1637,7 +1670,7 @@ export const MyNumbersView: React.FC = () => {
                     }`}
                   >
                     <ShoppingCart className="w-3.5 h-3.5" />
-                    <span>Rent Numbers (ইউজার রেন্ট)</span>
+                    <span>Rent Numbers</span>
                   </button>
                   <button
                     type="button"
@@ -1651,7 +1684,7 @@ export const MyNumbersView: React.FC = () => {
                     }`}
                   >
                     <FileUp className="w-3.5 h-3.5" />
-                    <span>Upload to Stock Pool (স্টক পুলে ফাইল আপলোড)</span>
+                    <span>Upload to Stock Pool</span>
                   </button>
                 </div>
               )}
@@ -1902,9 +1935,11 @@ export const MyNumbersView: React.FC = () => {
                         <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                           Select termination
                         </label>
-                        <span className="text-[10px] font-bold text-lime-600 dark:text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
-                          {terminations.length} Ranges · 86 Countries
-                        </span>
+                        {isAdmin && (
+                          <span className="text-[10px] font-bold text-lime-600 dark:text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
+                            {terminations.length} Ranges · 86 Countries
+                          </span>
+                        )}
                       </div>
 
                       {/* Fast Search Filter input */}
@@ -1937,25 +1972,36 @@ export const MyNumbersView: React.FC = () => {
                           <option value="">
                             {terminations.length === 0 ? '-- No active ranges (Admin has not added any numbers yet) --' : '-- Choose a termination --'}
                           </option>
-                          {(Object.entries(groupedTerminations) as [string, TerminationOption[]][]).map(([country, items]) => (
-                            <optgroup key={country} label={`${country} (${items.length} ${items.length === 1 ? 'range' : 'ranges'})`}>
-                              {items.map((t) => {
-                                const avail = t.poolStats ? t.poolStats.available : 0;
-                                const isOut = t.poolStats ? t.poolStats.outOfStock : false;
-                                return (
-                                  <option key={t.code} value={t.code}>
-                                    {t.label} {isOut ? ' [🔴 Out of Stock - 0 Available]' : ` [🟢 ${avail} Available]`}
-                                  </option>
-                                );
-                              })}
-                            </optgroup>
-                          ))}
+                          {filteredTerminations.map((t) => {
+                            const avail = t.poolStats ? t.poolStats.available : 0;
+                            const total = t.poolStats ? t.poolStats.total : 0;
+                            const isOut = t.poolStats ? t.poolStats.outOfStock : false;
+                            const isUnlimited = !t.poolStats || total === 0;
+
+                            const cleanCountry = getCleanCountryName(t.country);
+                            const cleanOp = getCleanOperatorName(t.operator || t.service || '');
+
+                            let statusSuffix = '';
+                            if (isOut) {
+                              statusSuffix = ' [🔴 Out of Stock]';
+                            } else if (isUnlimited) {
+                              statusSuffix = ' [🟢 Unlimited]';
+                            } else {
+                              statusSuffix = ' [🟢 Available]';
+                            }
+
+                            return (
+                              <option key={t.code} value={t.code}>
+                                {cleanCountry} - {cleanOp}{statusSuffix}
+                              </option>
+                            );
+                          })}
                         </select>
                         <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
 
-                      {/* Range Live Stock & Usage Status Box */}
-                      {selectedTerm && selectedTerm.poolStats && (
+                      {/* Range Live Stock & Usage Status Box (Admin Only) */}
+                      {isAdmin && selectedTerm && selectedTerm.poolStats && (
                         <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
@@ -1993,11 +2039,13 @@ export const MyNumbersView: React.FC = () => {
                         </div>
                       )}
 
-                      <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
-                        {terminations.length === 0
-                          ? 'No active ranges available. Admin has not added any numbers for any country yet.'
-                          : `Showing ${filteredTerminations.length} of ${terminations.length} active range sources added by Admin across ${Object.keys(groupedTerminations).length} countries.`}
-                      </p>
+                      {isAdmin && (
+                        <p className="text-[11px] leading-normal text-slate-400 dark:text-slate-500 font-medium">
+                          {terminations.length === 0
+                            ? 'No active ranges available. Admin has not added any numbers for any country yet.'
+                            : `Showing ${filteredTerminations.length} of ${terminations.length} active range sources added by Admin across ${Object.keys(groupedTerminations).length} countries.`}
+                        </p>
+                      )}
 
                       {/* Add Custom Range toggler (ADMIN ONLY) */}
                       {isAdmin && (
@@ -2021,7 +2069,7 @@ export const MyNumbersView: React.FC = () => {
                     {selectedTerm && (
                       <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800/50 animate-fade-in">
                         {/* Country & Operator & Available Row Grid */}
-                        <div className="grid grid-cols-3 gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                        <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-4 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50`}>
                           <div className="space-y-1">
                             <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
                               COUNTRY
@@ -2038,14 +2086,16 @@ export const MyNumbersView: React.FC = () => {
                               {selectedTerm.operator}
                             </span>
                           </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                              AVAILABLE
-                            </span>
-                            <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
-                              {selectedTerm.available}
-                            </span>
-                          </div>
+                          {isAdmin && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                                AVAILABLE
+                              </span>
+                              <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
+                                {selectedTerm.available}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Payment Term Pick Select */}

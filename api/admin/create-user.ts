@@ -14,10 +14,10 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { name, email, password, role } = req.body || {};
+    const { name, email, password, pass, role, balance, phone, country, location } = req.body || {};
     const cleanName = String(name || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
-    const cleanPassword = String(password || '').trim();
+    const cleanPassword = String(password || pass || '').trim();
 
     if (!cleanName || !cleanEmail || !cleanPassword) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
@@ -28,12 +28,18 @@ export default async function handler(req: any, res: any) {
       name: cleanName,
       email: cleanEmail,
       password: cleanPassword,
+      pass: cleanPassword,
       role: role || 'User',
+      balance: typeof balance === 'number' ? balance : parseFloat(balance) || 50.0,
+      country: country || '',
+      phone: phone || '',
+      location: location || country || 'Global',
       status: 'Active' as const,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString()
     };
 
-    AuthStore.saveUser(newUser);
+    await AuthStore.saveUser(newUser);
 
     return res.status(200).json({
       success: true,
@@ -43,6 +49,9 @@ export default async function handler(req: any, res: any) {
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
+        balance: newUser.balance,
+        country: newUser.country,
+        phone: newUser.phone,
         status: newUser.status
       }
     });

@@ -21,7 +21,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const users = AuthStore.getUsers();
+    const users = await AuthStore.getUsers();
     const user = users.find(u => u.email.toLowerCase().trim() === cleanEmail);
 
     if (!user) {
@@ -29,7 +29,7 @@ export default async function handler(req: any, res: any) {
     }
 
     user.status = 'Rejected';
-    AuthStore.saveUser(user);
+    await AuthStore.saveUser(user);
 
     return res.status(200).json({
       success: true,

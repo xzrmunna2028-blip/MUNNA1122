@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase.js';
 
 /**
@@ -465,3 +465,224 @@ export class CoreStore {
     };
   }
 }
+
+export interface CustomTermination {
+  code: string;
+  country: string;
+  operator: string;
+  service: string;
+  rangeName: string;
+  available: string;
+  rate: string;
+  limit: string;
+  number: string;
+  label: string;
+  totalNumbers?: number;
+  createdAt?: number;
+}
+
+export class CustomTermStore {
+  /**
+   * Saves custom termination range and its phone number pool chunked into Firestore
+   */
+  public static async save(
+    term: Omit<CustomTermination, 'available' | 'label'>,
+    numbersPool: string[]
+  ): Promise<boolean> {
+    const { code } = term;
+    const totalNumbers = numbersPool.length;
+
+    // 1. Save metadata to main document
+    const termRef = doc(db, 'custom_terminations', code);
+    await setDoc(termRef, {
+      code,
+      country: term.country,
+      operator: term.operator,
+      service: term.service,
+      rangeName: term.rangeName,
+      rate: term.rate,
+      limit: term.limit,
+      number: term.number,
+      totalNumbers,
+      createdAt: term.createdAt || Date.now()
+    });
+
+    // 2. Chunk numbersPool into max 10,000 per document to stay safely below 1MB limit
+    const CHUNK_SIZE = 10000;
+    const chunks: string[][] = [];
+    for (let i = 0; i < numbersPool.length; i += CHUNK_SIZE) {
+      chunks.push(numbersPool.slice(i, i + CHUNK_SIZE));
+    }
+
+    // 3. Save each chunk to subcollection pool_chunks
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
+      await setDoc(chunkRef, { numbers: chunks[i] });
+    }
+
+    // 4. Delete any leftover previous chunks from disk or Firestore if the pool size has decreased
+    // (e.g. if previous had 15 chunks and now it has 5, delete chunks 5 to 14)
+    const startIdx = chunks.length;
+    for (let i = startIdx; i < startIdx + 100; i++) {
+      try {
+        const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
+        await deleteDoc(chunkRef);
+      } catch (e) {
+        break; // Stop if we hit an error or no more chunks
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Updates only metadata of an existing custom termination
+   */
+  public static async updateMetadata(
+    code: string,
+    updates: Partial<Omit<CustomTermination, 'code'>>
+  ): Promise<any> {
+    const termRef = doc(db, 'custom_terminations', code);
+    const snap = await getDoc(termRef);
+    if (!snap.exists()) {
+      throw new Error('Termination range not found');
+    }
+
+    const current = snap.data();
+    const updated = {
+      ...current,
+      country: updates.country || current.country,
+      operator: updates.operator || current.operator,
+      service: updates.service || current.service,
+      rangeName: updates.rangeName || current.rangeName,
+      rate: updates.rate !== undefined ? updates.rate : current.rate,
+      limit: updates.limit || current.limit,
+      number: updates.number !== undefined ? updates.number : current.number,
+    };
+
+    await setDoc(termRef, updated);
+    return updated;
+  }
+
+  /**
+   * Retrieves all custom terminations with computed fields
+   */
+  public static async getAll(): Promise<CustomTermination[]> {
+    try {
+      const colRef = collection(db, 'custom_terminations');
+      const snap = await getDocs(colRef);
+      const list: CustomTermination[] = [];
+      
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data && data.code) {
+          const total = data.totalNumbers || 0;
+          list.push({
+            code: data.code,
+            country: data.country,
+            operator: data.operator,
+            service: data.service,
+            rangeName: data.rangeName,
+            rate: data.rate,
+            limit: data.limit,
+            number: data.number,
+            available: total > 0 ? `${total.toLocaleString()} available` : 'Unlimited available',
+            label: `${data.rangeName} (${total > 0 ? total.toLocaleString() + ' file numbers' : 'Unlimited available'})`,
+            totalNumbers: total,
+            createdAt: data.createdAt || Date.now()
+          });
+        }
+      });
+
+      // Sort by createdAt desc
+      return list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    } catch (e) {
+      console.error('[CustomTermStore] Error fetching custom terminations:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Fetches full combined pool of numbers for a custom range
+   */
+  public static async getPool(code: string): Promise<string[]> {
+    try {
+      const colRef = collection(db, 'custom_terminations', code, 'pool_chunks');
+      const snap = await getDocs(colRef);
+      let combined: string[] = [];
+      
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data && Array.isArray(data.numbers)) {
+          combined = combined.concat(data.numbers);
+        }
+      });
+      
+      return combined;
+    } catch (e) {
+      console.error(`[CustomTermStore] Error fetching pool for ${code}:`, e);
+      return [];
+    }
+  }
+
+  /**
+   * Deletes custom range and its chunks from Firestore
+   */
+  public static async delete(code: string): Promise<boolean> {
+    try {
+      // 1. Delete pool chunks
+      const colRef = collection(db, 'custom_terminations', code, 'pool_chunks');
+      const snap = await getDocs(colRef);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, 'custom_terminations', code, 'pool_chunks', d.id));
+      }
+
+      // 2. Delete main document
+      await deleteDoc(doc(db, 'custom_terminations', code));
+      return true;
+    } catch (e) {
+      console.error(`[CustomTermStore] Error deleting termination ${code}:`, e);
+      return false;
+    }
+  }
+
+  /**
+   * Appends numbers to a custom range and saves back
+   */
+  public static async appendNumbers(code: string, newNumbers: string[]): Promise<number> {
+    const termRef = doc(db, 'custom_terminations', code);
+    const snap = await getDoc(termRef);
+    if (!snap.exists()) {
+      throw new Error('Termination range not found');
+    }
+
+    const metadata = snap.data();
+    const currentPool = await this.getPool(code);
+    const poolSet = new Set(currentPool);
+    
+    newNumbers.forEach((num) => {
+      let clean = String(num || '').trim();
+      if (clean) {
+        if (!clean.startsWith('+')) clean = `+${clean}`;
+        poolSet.add(clean);
+      }
+    });
+
+    const merged = Array.from(poolSet);
+    
+    await this.save({
+      code,
+      country: metadata.country || 'Global',
+      operator: metadata.operator || 'Carrier',
+      service: metadata.service || 'WhatsApp',
+      rangeName: metadata.rangeName || code,
+      rate: metadata.rate || '0.0000 USD',
+      limit: metadata.limit || '10,000',
+      number: merged[0] || metadata.number || '',
+      createdAt: metadata.createdAt || Date.now()
+    }, merged);
+
+    return merged.length;
+  }
+}
+

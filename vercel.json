@@ -6,7 +6,8 @@
   "cleanUrls": true,
   "functions": {
     "api/**/*.ts": {
-      "maxDuration": 15
+      "maxDuration": 15,
+      "includeFiles": "registered_users.json,invitations.json,broadcast_notices.json,iprn_sync.json,system_config.json"
     }
   },
   "rewrites": [
@@ -17,6 +18,10 @@
     {
       "source": "/api/user-status/(.*)",
       "destination": "/api/user-status?email=$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
       "source": "/((?!api/).*)",

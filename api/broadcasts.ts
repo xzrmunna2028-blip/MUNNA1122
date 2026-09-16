@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (req.method === 'GET') {
-      const broadcasts = AuthStore.getBroadcasts();
+      const broadcasts = await AuthStore.getBroadcasts();
       return res.status(200).json({
         success: true,
         broadcasts
@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
         createdAt: new Date().toISOString()
       };
 
-      AuthStore.saveBroadcast(newNotice);
+      await AuthStore.saveBroadcast(newNotice);
 
       return res.status(201).json({
         success: true,
@@ -46,7 +46,7 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'DELETE') {
       const { id } = req.body || req.query || {};
       if (id) {
-        AuthStore.deleteBroadcast(String(id));
+        await AuthStore.deleteBroadcast(String(id));
       }
       return res.status(200).json({ success: true, message: 'Broadcast deleted' });
     }

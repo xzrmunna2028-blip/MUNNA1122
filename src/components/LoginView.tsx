@@ -500,9 +500,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <h2 className="text-2xl font-bold text-white tracking-tight">
                   Create an Account
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Contact our team to get your account created
-                </p>
               </div>
 
               <div className="w-full h-[1px] bg-slate-800/70 my-5" />
@@ -566,20 +563,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <p className="text-[11px] text-slate-400">
                   Direct support active 24/7. Click either channel to initiate direct setup.
                 </p>
-              </div>
-
-              <div className="w-full h-[1px] bg-slate-800/70 my-4" />
-
-              {/* Direct Registration Form Option */}
-              <div className="flex flex-col items-center gap-1.5 text-center">
-                <span className="text-[11px] text-slate-400">Prefer instant self-registration?</span>
-                <button
-                  type="button"
-                  onClick={openRegisterMode}
-                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Open Direct Registration Form &rarr;</span>
-                </button>
               </div>
 
               <div className="w-full h-[1px] bg-slate-800/70 my-4" />
@@ -884,31 +867,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </AnimatePresence>
 
           {/* Reserved slot for custom options */}
-          <div className="mt-6 pt-5 border-t border-slate-800/60 text-center flex items-center justify-center gap-1.5">
-            {isRegisterMode ? (
-              <>
-                <span className="text-xs text-slate-400 font-medium">Already have an account?</span>
-                <button
-                  type="button"
-                  onClick={closeCreateAccount}
-                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
-                >
-                  Sign In
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="text-xs text-slate-400 font-medium">Don't have an account?</span>
-                <button
-                  type="button"
-                  onClick={openCreateAccount}
-                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition-colors cursor-pointer"
-                >
-                  Create an Account
-                </button>
-              </>
-            )}
-          </div>
+          {isRegisterMode && (
+            <div className="mt-6 pt-5 border-t border-slate-800/60 text-center flex items-center justify-center gap-1.5">
+              <span className="text-xs text-slate-400 font-medium">Already have an account?</span>
+              <button
+                type="button"
+                onClick={closeCreateAccount}
+                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
+              >
+                Sign In
+              </button>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

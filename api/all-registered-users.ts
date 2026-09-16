@@ -10,7 +10,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const users = AuthStore.getUsers();
+    const users = await AuthStore.getUsers();
     // Return users without plaintext passwords for privacy
     const safeUsers = users.map(u => ({
       id: u.id,

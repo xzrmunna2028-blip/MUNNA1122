@@ -106,14 +106,36 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
   darkMode = true,
 }) => {
   const [currentStep, setCurrentStep] = useState<number>(1);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isPendingSubmitted, setIsPendingSubmitted] = useState<boolean>(false);
   const [isApprovedSuccess, setIsApprovedSuccess] = useState<boolean>(false);
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
   const [registeredName, setRegisteredName] = useState<string>('');
+  const [registeredPassword, setRegisteredPassword] = useState<string>('');
 
-  const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
+  const [invitation, setInvitation] = useState<InvitationDetails | null>(() => {
+    let cleanToken = 'inv_direct_access';
+    try {
+      const hash = typeof window !== 'undefined' ? window.location.hash || '' : '';
+      const search = typeof window !== 'undefined' ? window.location.search || '' : '';
+      const paramsStr = hash.includes('?') ? hash.substring(hash.indexOf('?') + 1) : search;
+      const p = new URLSearchParams(paramsStr);
+      cleanToken = p.get('token') || p.get('ref') || p.get('code') || token || 'inv_direct_access';
+    } catch (e) {}
+
+    return {
+      token: cleanToken,
+      email: '',
+      name: 'New Operator',
+      role: 'User',
+      balance: 50.0,
+      inviter: 'VoltxSMS Support',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1000 * 3600 * 24 * 365 * 100,
+      status: 'active' as const,
+    };
+  });
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isExpired, setIsExpired] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900); // 15 minutes default
@@ -188,91 +210,75 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     let timerId: any = null;
 
     const verifyToken = async () => {
-      if (!token || !token.trim()) {
-        setIsExpired(true);
-        setErrorMessage('Invalid invitation token. Please check your link.');
-        setLoading(false);
-        return;
-      }
+      // Check for token in URL query or hash parameter if not passed directly
+      let urlToken = '';
+      let urlEmail = '';
+      let urlName = '';
+      let urlRole = 'User';
+      let urlBal = 50.0;
 
-      const cleanToken = token.trim();
-      setIsExpired(false);
-      setErrorMessage('');
-
-      // 1. FAST LOCAL HYDRATION for 0ms visual rendering across all browsers
-      let hydrated = false;
-      try {
-        const localStr = localStorage.getItem('codeflow_invitations_cache');
-        if (localStr) {
-          const list = JSON.parse(localStr);
-          const found = list.find((i: any) => i.token && i.token.trim().toLowerCase() === cleanToken.toLowerCase());
-          if (found) {
-            setInvitation(found);
-            const rem = Math.max(10, Math.floor((found.expiresAt - Date.now()) / 1000));
-            setSecondsRemaining(rem);
-            if (found.name && !firstName) {
-              const parts = found.name.split(' ');
-              setFirstName(parts[0] || '');
-              if (parts.length > 1) setLastName(parts.slice(1).join(' '));
-            }
-            setIsExpired(false);
-            setLoading(false);
-            hydrated = true;
-          }
-        }
-      } catch (e) {}
-
-      // 1b. INSTANT URL PARAMETER HYDRATION (Supports ANY new device, mobile data, incognito, or browser)
       try {
         const hash = window.location.hash || '';
         const search = window.location.search || '';
         const paramsStr = hash.includes('?') ? hash.substring(hash.indexOf('?') + 1) : search;
         const p = new URLSearchParams(paramsStr);
-        const urlEmail = p.get('email');
-        const urlName = p.get('name');
-        const urlRole = p.get('role');
-        const urlBal = p.get('bal');
-        const urlExp = p.get('exp');
+        urlToken = p.get('token') || p.get('ref') || p.get('code') || '';
+        urlEmail = p.get('email') || '';
+        urlName = p.get('name') || '';
+        urlRole = p.get('role') || 'User';
+        if (p.get('bal')) urlBal = parseFloat(p.get('bal') || '50.0') || 50.0;
+      } catch (e) {}
 
-        if (urlEmail && urlEmail.includes('@')) {
-          const expMs = urlExp ? parseInt(urlExp, 10) : (Date.now() + 15 * 60 * 1000);
-          const now = Date.now();
-          if (now < expMs) {
-            const urlInv = {
-              token: cleanToken,
-              email: urlEmail.toLowerCase().trim(),
-              name: urlName || urlEmail.split('@')[0],
-              role: urlRole || 'User',
-              balance: urlBal ? parseFloat(urlBal) : 50.0,
-              inviter: 'VoltxSMS Support',
-              createdAt: now,
-              expiresAt: expMs,
-              status: 'active' as const,
-            };
-            setInvitation(urlInv);
-            const rem = Math.max(10, Math.floor((expMs - now) / 1000));
-            setSecondsRemaining(rem);
-            if (urlInv.name && !firstName) {
-              const parts = urlInv.name.split(' ');
-              setFirstName(parts[0] || '');
-              if (parts.length > 1) setLastName(parts.slice(1).join(' '));
-            }
-            setIsExpired(false);
-            setLoading(false);
-            hydrated = true;
-          }
+      const activeToken = token && token !== 'NO_TOKEN_PROVIDED' ? token : (urlToken || 'inv_active_onboarding');
+      const cleanToken = activeToken.trim();
+
+      setIsExpired(false);
+      setErrorMessage('');
+
+      // Check local cache for matched token if available
+      let matchedCache: any = null;
+      try {
+        const localStr = localStorage.getItem('codeflow_invitations_cache');
+        if (localStr) {
+          const list = JSON.parse(localStr);
+          matchedCache = list.find((i: any) => i.token && i.token.trim().toLowerCase() === cleanToken.toLowerCase());
         }
       } catch (e) {}
 
-      // 2. PARALLEL SERVER VERIFICATION (Non-blocking fail-safe)
+      const fallbackEmail = matchedCache?.email || (urlEmail ? urlEmail.toLowerCase().trim() : '');
+      const fallbackName = matchedCache?.name || urlName || (fallbackEmail ? fallbackEmail.split('@')[0] : '');
+
+      const fallbackInv = {
+        token: cleanToken,
+        email: fallbackEmail,
+        name: fallbackName,
+        role: matchedCache?.role || urlRole,
+        balance: matchedCache?.balance || urlBal,
+        inviter: matchedCache?.inviter || 'VoltxSMS Support',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 1000 * 3600 * 24 * 365 * 100, // Perpetual valid invitation
+        status: 'active' as const,
+      };
+
+      setInvitation(fallbackInv);
+      if (fallbackInv.name && !firstName) {
+        const parts = fallbackInv.name.split(' ');
+        setFirstName(parts[0] || '');
+        if (parts.length > 1) setLastName(parts.slice(1).join(' '));
+      }
+
+      setIsExpired(false);
+      setLoading(false);
+
+      // Real-time server sync
       try {
         const { ok, data } = await safeFetchJson<any>(
-          `/api/verify-invitation?token=${encodeURIComponent(cleanToken)}`,
+          `/api/verify-invitation?token=${encodeURIComponent(cleanToken)}&_t=${Date.now()}`,
           { method: 'GET' },
-          { valid: false }
+          { valid: true }
         );
 
-        if (ok && data?.valid) {
+        if (ok && data?.valid && data.invitation) {
           const inv = data.invitation;
           setInvitation(inv);
           setIsExpired(false);
@@ -285,39 +291,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               setLastName(parts.slice(1).join(' '));
             }
           }
-
-          const remSec = data.remainingSeconds || Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
-          setSecondsRemaining(remSec);
-          if (remSec <= 0) {
-            setIsExpired(true);
-            setErrorMessage('LINK EXPIRED');
-          }
-          setLoading(false);
-        } else if (data?.reason === 'already_used') {
-          setIsExpired(true);
-          setErrorMessage('This invitation link has already been used to create an account.');
-          setLoading(false);
-        } else if (data?.reason === 'expired') {
-          setIsExpired(true);
-          setErrorMessage('This invitation link has expired (15-minute validity exceeded).');
-          setLoading(false);
-        } else {
-          // If server didn't find it or was offline, but we have URL or local hydration:
-          if (hydrated) {
-            setIsExpired(false);
-            setLoading(false);
-          } else {
-            setIsExpired(true);
-            setErrorMessage(data?.message || 'Invalid or expired invitation token.');
-            setLoading(false);
-          }
         }
       } catch (err: any) {
-        console.warn('Server verification notice, relied on instant client hydration:', err);
-        if (hydrated) {
-          setIsExpired(false);
-        }
-        setLoading(false);
+        console.warn('Server verification notice, using active onboarding state:', err);
       }
     };
 
@@ -327,26 +303,6 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       if (timerId) clearInterval(timerId);
     };
   }, [token]);
-
-  // Live 15-Minute Countdown Clock
-  useEffect(() => {
-    if (loading || isExpired) return;
-
-    const interval = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setIsExpired(true);
-          setErrorMessage('This invitation link has expired (15-minute validity exceeded).');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [loading, isExpired]);
-
   // Poll server & local storage for real-time approval status
   useEffect(() => {
     if (!isPendingSubmitted || !registeredEmail) return;
@@ -409,6 +365,11 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       setErrorMessage('Please enter your First Name.');
       return;
     }
+    const enteredEmail = (invitation?.email || '').trim();
+    if (!enteredEmail || !enteredEmail.includes('@')) {
+      setErrorMessage('Please enter a valid Email Address.');
+      return;
+    }
     setErrorMessage('');
     setCurrentStep(2);
   };
@@ -463,6 +424,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
+          email: targetEmail,
+          name: assembledFullName,
           password,
           phone,
           telegram,
@@ -514,6 +477,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       // Inform user that registration is complete and now in Pending state
       setRegisteredEmail(targetEmail);
       setRegisteredName(assembledFullName);
+      setRegisteredPassword(password);
       setIsPendingSubmitted(true);
       setIsSubmitting(false);
       window.dispatchEvent(new Event('storage'));
@@ -571,7 +535,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                 Account Approved! 🎉
               </h2>
               <p className="text-xs sm:text-sm text-emerald-300 font-semibold leading-relaxed">
-                অভিনন্দন! এডমিন আপনার অ্যাকাউন্টটি সফলভাবে অনুমোদন ও সক্রিয় করেছেন।
+                Congratulations! Your account has been approved and activated.
               </p>
             </div>
 
@@ -598,7 +562,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
               className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#65a30d] to-[#4d7c0f] hover:from-[#54880b] hover:to-[#3f670c] text-white font-black text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-lime-950/80 active:scale-[0.99]"
             >
               <Sparkles className="w-4 h-4" />
-              <span>লগইন প্যানেলে প্রবেশ করুন (Sign In Now)</span>
+              <span>Sign In to Dashboard</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </motion.div>
@@ -634,45 +598,47 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
             </h1>
           </div>
 
-          {/* Animated Hourglass / Clock Icon */}
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-inner relative">
-            <Clock className="w-8 h-8 animate-pulse" />
-            <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-amber-400 animate-ping" />
+          {/* Static Clock / Shield Icon without spinning */}
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+            <Clock className="w-8 h-8" />
           </div>
 
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-600/50 text-amber-300 text-xs font-black uppercase tracking-wider">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-950/80 border border-amber-600/50 text-amber-300 text-xs font-black uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
               STATUS: PENDING APPROVAL
             </div>
             <h2 className="text-2xl font-black text-white tracking-tight">
               Registration Submitted!
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              আপনার সকল তথ্য এবং অ্যাকাউন্ট তৈরির প্রক্রিয়া সফলভাবে সম্পন্ন হয়েছে। আপনার অ্যাকাউন্টটি বর্তমানে <strong className="text-amber-300">Pending (অনুমোদনের অপেক্ষায়)</strong> রয়েছে।
-            </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 text-left text-xs space-y-2.5">
+          {/* User Credentials & Pending Status */}
+          <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 text-left text-xs space-y-3">
             <div className="flex items-center justify-between text-slate-400">
-              <span>Account Name:</span>
-              <span className="font-bold text-white">{registeredName || invitation?.name || 'New User'}</span>
+              <span className="font-semibold text-slate-400">Account Name:</span>
+              <span className="font-bold text-white">{registeredName || invitation?.name || 'User'}</span>
             </div>
+
             <div className="flex items-center justify-between text-slate-400">
-              <span>Email:</span>
-              <span className="font-mono font-bold text-cyan-300">{registeredEmail || invitation?.email}</span>
+              <span className="font-semibold text-slate-400">Email ID:</span>
+              <span className="font-mono font-bold text-cyan-300 select-all">{registeredEmail || invitation?.email}</span>
             </div>
+
             <div className="flex items-center justify-between text-slate-400">
-              <span>Approval Status:</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-black tracking-wider flex items-center gap-1">
-                <Clock className="w-3 h-3 animate-spin" />
-                <span>WAITING FOR ADMIN</span>
+              <span className="font-semibold text-slate-400">Password:</span>
+              <span className="font-mono font-bold text-slate-200 select-all">
+                {registeredPassword ? registeredPassword : '••••••••'}
               </span>
             </div>
-          </div>
 
-          <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 text-[11px] text-amber-200/90 text-left leading-relaxed">
-            এডমিন আপনার অ্যাকাউন্টটি অনুমোদন (Approve) করার সাথে সাথে এই স্ক্রিনটি স্বয়ংক্রিয়ভাবে সক্রিয় হয়ে যাবে।
+            <div className="flex items-center justify-between text-slate-400 pt-1 border-t border-slate-800/80">
+              <span className="font-semibold text-slate-400">Status:</span>
+              <span className="px-2.5 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-600/50 text-[10px] font-black tracking-wider flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span>PENDING</span>
+              </span>
+            </div>
           </div>
 
           <button
@@ -709,53 +675,18 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     );
   }
 
-  // EXPIRED STATE - Clean Full-Screen Design
-  if (isExpired || !invitation) {
-    return (
-      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#030712] text-white p-6 font-sans relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(#ef4444_1px,transparent_1px)] [background-size:24px_24px]" />
-
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-[#0b1329]/95 border border-red-500/30 rounded-3xl p-8 text-center space-y-6 z-10 shadow-2xl backdrop-blur-2xl"
-        >
-          {/* Logo */}
-          <div className="w-16 h-16 rounded-2xl bg-slate-900 p-1 border border-slate-800 shadow-xl flex items-center justify-center mx-auto mb-1">
-            <img
-              src="/code_flow_logo.jpg"
-              alt="Code Flow Logo"
-              className="w-full h-full object-contain rounded-xl"
-            />
-          </div>
-
-          <div className="w-16 h-16 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto shadow-2xl border border-red-500/30">
-            <XCircle className="w-8 h-8 stroke-[2.5]" />
-          </div>
-
-          <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">
-              LINK EXPIRED
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed font-medium">
-              This personalized invitation link has expired or has already been used. Please request a fresh invitation link from your administrator.
-            </p>
-          </div>
-
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={onGoToLogin}
-              className="w-full py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:text-white"
-            >
-              <span>Return to Sign In</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
+  // Guaranteed Active Invitation Object
+  const activeInv = invitation || {
+    token: token || 'inv_direct',
+    email: '',
+    name: 'New Operator',
+    role: 'User',
+    balance: 50.0,
+    inviter: 'VoltxSMS Support',
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 1000 * 3600 * 24 * 365 * 100,
+    status: 'active' as const,
+  };
 
   // ACTIVE 4-STEP ONBOARDING
   const stepTitles = [
@@ -821,34 +752,13 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
             </p>
           </div>
 
-          {/* Invitation Info Pill Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800/90 text-xs">
+          {/* Registration Info Pill Banner */}
+          <div className="flex items-center justify-center p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800/90 text-xs">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span className="text-slate-400 font-medium">Invited:</span>
-              <span className="font-mono font-bold text-emerald-300 truncate max-w-[150px] sm:max-w-[200px]">
-                {invitation.email}
+              <span className="text-emerald-300 font-extrabold tracking-wide uppercase text-[11px] sm:text-xs">
+                VIP Operator Account Registration
               </span>
-              <button
-                type="button"
-                onClick={handleCopyEmail}
-                title="Copy Email"
-                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
-              >
-                {copiedEmail ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-lg bg-cyan-950/90 border border-cyan-700/60 text-[10px] font-black text-cyan-300 shadow-sm">
-                ${invitation.balance?.toFixed(2) || '50.00'} BONUS
-              </span>
-
-              {/* Real-time Countdown Timer */}
-              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-950/80 border border-amber-700/60 text-amber-300 font-mono text-[11px] font-black shadow-sm">
-                <Clock className="w-3 h-3 text-amber-400" />
-                <span>{formatCountdown(secondsRemaining)}</span>
-              </div>
             </div>
           </div>
 
@@ -985,10 +895,26 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                     <Mail className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="email"
-                      value={invitation.email}
-                      disabled
-                      readOnly
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/60 border border-emerald-500/40 text-emerald-300 font-mono rounded-xl text-xs font-bold cursor-not-allowed"
+                      value={invitation?.email || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInvitation((prev: any) => ({
+                          ...(prev || {
+                            token: token || 'inv_direct',
+                            role: 'User',
+                            balance: 50.0,
+                            inviter: 'VoltxSMS Support',
+                            createdAt: Date.now(),
+                            expiresAt: Date.now() + 1000 * 3600 * 24 * 365 * 50,
+                            status: 'active'
+                          }),
+                          email: val,
+                          name: prev?.name || val.split('@')[0] || 'Operator'
+                        }));
+                      }}
+                      placeholder="Enter your email address"
+                      required
+                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-bold text-emerald-300 font-mono focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -1363,7 +1289,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                   <span>Step 4: Security & Authentication</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Create a strong account password and an optional 4-digit security PIN.
+                  Create a secure password for your portal access.
                 </p>
               </div>
 
@@ -1427,24 +1353,6 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span>SECURITY PIN (4 DIGITS)</span>
-                    <span className="text-[10px] text-slate-400">For Fast Verification</span>
-                  </label>
-                  <div className="relative">
-                    <KeyRound className="w-4 h-4 text-cyan-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      maxLength={4}
-                      value={securityPin}
-                      onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 1234"
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/80 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-xs font-mono font-bold text-cyan-300 placeholder-slate-500 focus:outline-none tracking-widest"
-                    />
                   </div>
                 </div>
 

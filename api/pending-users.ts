@@ -10,7 +10,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const pending = AuthStore.getPendingUsers();
+    const pending = await AuthStore.getPendingUsers();
     return res.status(200).json({
       success: true,
       pending

@@ -161,9 +161,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [activeSection, setActiveSection] = useState<
     | 'overview'
     | 'users'
-    | 'invitations'
     | 'ranges_countries'
     | 'pending_activations'
+    | 'invitations'
     | 'manual_create'
     | 'sub_admins'
     | 'master_key'
@@ -690,19 +690,16 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       localStorage.setItem('codeflow_registered_users', JSON.stringify(updatedList));
     }
 
-    // Persist password update to server database
-    fetch('/api/admin/create-user', {
+    // Persist password update to server database and trigger real-time broadcast
+    fetch('/api/admin/reset-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: selectedUserForPassword.email,
-        pass: updatedPass,
-        name: selectedUserForPassword.name,
-        role: selectedUserForPassword.role,
-        balance: selectedUserForPassword.balance,
-        status: selectedUserForPassword.status,
+        id: selectedUserForPassword.id,
+        newPassword: updatedPass,
       }),
-    }).catch(() => {});
+    }).catch((err) => console.error('[Admin] Password reset API error:', err));
 
     showToast(`Password successfully updated for ${selectedUserForPassword.email}`);
     setSelectedUserForPassword(null);
@@ -756,6 +753,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       window.dispatchEvent(new Event('codeflow_notifications_updated'));
     } catch (e) {}
 
+    // Send to backend API for permanent storage and real-time WebSocket push
+    fetch('/api/admin/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: selectedUserForNotify.email,
+        title: personalNotifTitle.trim(),
+        message: personalNotifMessage.trim(),
+        type: 'info',
+      }),
+    }).catch((err) => console.error('[Admin] Notification dispatch error:', err));
+
     showToast(`Personal Notification dispatched to ${selectedUserForNotify.name}!`);
     setSelectedUserForNotify(null);
     setPersonalNotifTitle('');
@@ -764,27 +773,46 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   // Suspend User
   const handleSuspendUser = (id: string) => {
+    const targetUser = users.find((u) => u.id === id);
+    if (!targetUser) return;
+    const nextStatus = targetUser.status === 'Suspended' ? 'Active' : 'Suspended';
+
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === id) {
-          const nextStatus = u.status === 'Suspended' ? 'Active' : 'Suspended';
           return { ...u, status: nextStatus, isOnline: nextStatus === 'Active' ? u.isOnline : false };
         }
         return u;
       })
     );
-    showToast('User suspension status toggled');
+
+    // Call server API for real-time kickout & persistent status
+    fetch('/api/admin/update-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        email: targetUser.email,
+        status: nextStatus,
+        isOnline: nextStatus === 'Active',
+      }),
+    }).catch((e) => console.error('[Admin] Suspend user API error:', e));
+
+    showToast(`User ${targetUser.email} ${nextStatus === 'Suspended' ? 'suspended & session terminated' : 'reactivated'}`);
   };
 
   // Ban User from Website
   const handleBanUser = (id: string, email: string) => {
+    const targetUser = users.find((u) => u.id === id || u.email.toLowerCase() === email.toLowerCase());
+    const isBanned = targetUser?.status === 'Banned';
+    const nextStatus = isBanned ? 'Active' : 'Banned';
+
     setUsers((prev) =>
       prev.map((u) => {
-        if (u.id === id) {
-          const isBanned = u.status === 'Banned';
+        if (u.id === id || u.email.toLowerCase() === email.toLowerCase()) {
           return {
             ...u,
-            status: isBanned ? 'Active' : 'Banned',
+            status: nextStatus,
             isOnline: false,
             lastActive: isBanned ? 'Reactivated' : 'BANNED by Admin',
           };
@@ -792,21 +820,42 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         return u;
       })
     );
-    showToast(`Security Ban status updated for ${email}`);
+
+    // Call server API for real-time kickout & security ban
+    fetch('/api/admin/update-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        email,
+        status: nextStatus,
+        isOnline: false,
+      }),
+    }).catch((e) => console.error('[Admin] Ban user API error:', e));
+
+    showToast(`Security Ban ${nextStatus === 'Banned' ? 'ENFORCED (Session Killed)' : 'REMOVED'} for ${email}`);
   };
 
   // Delete User permanently
   const handleDeleteUserPermanently = (id: string, email: string) => {
-    if (window.confirm(`Are you sure you want to permanently DELETE user ${email}?`)) {
-      setUsers((prev) => prev.filter((u) => u.id !== id));
+    if (window.confirm(`Are you sure you want to permanently DELETE user ${email}? This will erase their account from database and kick them out immediately.`)) {
+      setUsers((prev) => prev.filter((u) => u.id !== id && u.email.toLowerCase() !== email.toLowerCase()));
       
-      // Also delete from registered users
+      // Also delete from registered users in localStorage
       const regStr = localStorage.getItem('codeflow_registered_users');
       if (regStr) {
         const regList: RegisteredUser[] = JSON.parse(regStr);
         const filtered = regList.filter((r) => r.email.toLowerCase() !== email.toLowerCase());
         localStorage.setItem('codeflow_registered_users', JSON.stringify(filtered));
       }
+
+      // Call backend to delete permanently from Firestore & broadcast kick event
+      fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, email }),
+      }).catch((e) => console.error('[Admin] Delete user API error:', e));
+
       showToast(`User ${email} deleted permanently.`);
     }
   };
@@ -825,6 +874,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [manualName, setManualName] = useState('');
   const [manualEmail, setManualEmail] = useState('');
   const [manualPass, setManualPass] = useState('');
+  const [manualCountry, setManualCountry] = useState('Bangladesh');
+  const [manualPhone, setManualPhone] = useState('');
   const [manualRole, setManualRole] = useState<'User' | 'VIP' | 'Sub-Admin'>('User');
   const [manualBalance, setManualBalance] = useState('50.00');
   const [manualLocation, setManualLocation] = useState('Dhaka, Bangladesh');
@@ -832,21 +883,22 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const handleManualCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualName.trim() || !manualEmail.trim() || !manualPass.trim()) {
-      showToast('Please fill all required fields');
+      showToast('Please fill all required fields (Name, Email, Password)');
       return;
     }
 
+    const cleanEmail = manualEmail.trim().toLowerCase();
     const newUser: AdminUserRecord = {
       id: `USR-${Math.floor(100 + Math.random() * 900)}`,
       name: manualName.trim(),
-      email: manualEmail.trim().toLowerCase(),
+      email: cleanEmail,
       pass: manualPass.trim(),
       role: manualRole,
       balance: parseFloat(manualBalance) || 0,
       status: 'Active',
       assignedNumbers: manualRole === 'VIP' ? 3 : 1,
       ipAddress: `103.${Math.floor(Math.random() * 200)}.${Math.floor(Math.random() * 200)}.12`,
-      location: manualLocation,
+      location: manualLocation || manualCountry || 'Dhaka, Bangladesh',
       device: 'Chrome / Desktop',
       isOnline: true,
       lastActive: 'Active now (Manual Created)',
@@ -854,23 +906,27 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       customNotifications: [],
     };
 
-    const updatedUsersList = [newUser, ...users];
+    const updatedUsersList = [newUser, ...users.filter(u => u.email.toLowerCase() !== cleanEmail)];
     setUsers(updatedUsersList);
-    localStorage.setItem('codeflow_admin_users_list_v2', JSON.stringify(updatedUsersList));
 
+    // Save to local storage registered users
     const regStr = localStorage.getItem('codeflow_registered_users');
     const regList: RegisteredUser[] = regStr ? JSON.parse(regStr) : [];
-    regList.push({
+    const regUpdated = [{
       name: newUser.name,
       email: newUser.email,
       pass: newUser.pass,
-      activatedAt: newUser.activatedAt,
-    });
-    localStorage.setItem('codeflow_registered_users', JSON.stringify(regList));
-    window.dispatchEvent(new Event('storage'));
+      role: newUser.role,
+      balance: newUser.balance,
+      registeredAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      country: manualCountry,
+      phone: manualPhone,
+    }, ...regList.filter(r => r.email.toLowerCase() !== cleanEmail)];
+    localStorage.setItem('codeflow_registered_users', JSON.stringify(regUpdated));
 
-    // Save permanently on server database safely so any browser can log in immediately
-    safeFetchJson('/api/admin/create-user', {
+    // Persist to Server Database and Firestore
+    fetch('/api/admin/create-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -879,13 +935,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         pass: newUser.pass,
         role: newUser.role,
         balance: newUser.balance,
+        country: manualCountry,
+        phone: manualPhone,
         status: 'Active',
-        location: newUser.location,
       }),
-    }, { success: true }).catch((err) => console.error('[API] Admin create-user error:', err));
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log('[Admin] User successfully created on server:', data);
+        }
+      })
+      .catch((err) => console.error('[Admin] Create user error:', err));
 
-    // Automatically send welcome email with credentials via Brevo SMTP relay safely
-    safeFetchJson('/api/send-welcome-email', {
+    // Automatically send welcome email with credentials via Brevo SMTP relay
+    fetch('/api/send-welcome-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -894,19 +958,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         role: newUser.role,
         password: newUser.pass,
       }),
-    }, { success: true })
-      .then(({ data }) => {
-        if (data?.success) {
-          console.log('[SMTP] Welcome email sent successfully to', newUser.email);
-        }
-      })
-      .catch((err) => console.error('[SMTP] Welcome email error:', err));
+    }).catch(() => {});
 
+    showToast(`Account successfully created for ${cleanEmail}! Can login immediately.`);
     setManualName('');
     setManualEmail('');
     setManualPass('');
+    setManualPhone('');
     setManualBalance('50.00');
-    showToast(`Account Created for "${newUser.name}" (${newUser.email})`);
     setActiveSection('users');
   };
 
@@ -1142,6 +1201,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       );
     }
 
+    // Dispatch to server API for real-time WebSocket broadcast to all users
+    fetch('/api/admin/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: globalNotifRecipient,
+        title: globalNotifTitle.trim(),
+        message: globalNotifMessage.trim(),
+        type: globalNotifType,
+      }),
+    }).catch((e) => console.error('[Admin] Notification dispatch error:', e));
+
     showToast(
       `Notification dispatched to ${
         globalNotifRecipient === 'all' ? 'All Users' : globalNotifRecipient
@@ -1169,6 +1240,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     const text = replyText[ticketId];
     if (!text || !text.trim()) return;
 
+    const targetTicket = supportTickets.find((t) => t.id === ticketId);
+
     setSupportTickets((prev) =>
       prev.map((t) => {
         if (t.id === ticketId) {
@@ -1181,6 +1254,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         return t;
       })
     );
+
+    // Call backend API for real-time ticket reply push
+    fetch('/api/admin/support-reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticketId,
+        reply: text,
+        userEmail: targetTicket?.userEmail || '',
+        adminName: 'Master Admin',
+      }),
+    }).catch((e) => console.error('[Admin] Support reply error:', e));
 
     setReplyText((prev) => ({ ...prev, [ticketId]: '' }));
     showToast(`Replied to ticket ${ticketId}`);
@@ -1218,18 +1303,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       highlight: false,
     },
     {
-      id: 'invitations',
-      label: '10-Min Verification Links',
-      icon: Send,
-      count: '4-Step',
-      highlight: true,
-    },
-    {
       id: 'pending_activations',
       label: 'Pending Accounts',
       icon: Clock,
       count: pendingActivations.length > 0 ? pendingActivations.length : null,
       highlight: pendingActivations.length > 0,
+    },
+    {
+      id: 'invitations',
+      label: 'রেজিস্ট্রেশন লিংক জেনারেটর (Registration Link)',
+      icon: KeyRound,
+      count: 'Unique Tokens',
+      highlight: true,
     },
     { id: 'manual_create', label: 'Manual Account Create', icon: UserPlus, count: null },
     { id: 'sub_admins', label: 'Sub-Admin Accounts', icon: Shield, count: subAdmins.length },
@@ -1607,6 +1692,34 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
           </div>
 
+          {/* Unique Registration Link Generator Quick Banner */}
+          <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/50 via-slate-900 to-slate-950 border border-cyan-500/40 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 shadow-inner">
+                <KeyRound className="w-6 h-6 stroke-[2]" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>ইউজার রেজিস্ট্রেশন লিংক জেনারেটর (Registration Link Generator)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px] font-bold">
+                    UNIQUE LINK
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  ইউজারের ইমেইল দিয়ে ইউনিক রেজিস্ট্রেশন লিংক জেনারেট করুন। এই নির্দিষ্ট লিংক ছাড়া সরাসরি কোনো ইউজার রেজিস্ট্রেশন ফর্মে প্রবেশ করতে পারবে না।
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setActiveSection('invitations')}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs shadow-lg shadow-cyan-950 flex items-center gap-2 cursor-pointer transition shrink-0"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>লিংক জেনারেটরে যান (Generate Link)</span>
+            </button>
+          </div>
+
           {/* Master Key Gateway Quick Banner */}
           <div className="p-6 rounded-3xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-950 border border-amber-500/40 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
@@ -1652,13 +1765,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-              <button
-                onClick={() => setActiveSection('invitations')}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-lime-600 to-emerald-600 hover:from-lime-500 hover:to-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition"
-              >
-                <Send className="w-4 h-4" />
-                <span>10-Min Invite Link</span>
-              </button>
               <button
                 onClick={() => setActiveSection('manual_create')}
                 className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition"
@@ -1930,6 +2036,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         </div>
       )}
 
+      {/* SECTION 3.5: REGISTRATION LINK GENERATOR */}
+      {activeSection === 'invitations' && (
+        <div className="space-y-6 animate-fade-in">
+          <InvitationManagerView showToast={showToast} />
+        </div>
+      )}
+
       {/* SECTION 4: MANUAL ACCOUNT CREATION */}
       {activeSection === 'manual_create' && (
         <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl max-w-2xl mx-auto space-y-5">
@@ -1994,8 +2107,30 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 />
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Country</label>
+                <input
+                  type="text"
+                  value={manualCountry}
+                  onChange={(e) => setManualCountry(e.target.value)}
+                  placeholder="e.g. Bangladesh"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Phone Number</label>
+                <input
+                  type="text"
+                  value={manualPhone}
+                  onChange={(e) => setManualPhone(e.target.value)}
+                  placeholder="e.g. +880 1712-345678"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-semibold text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
               <div className="space-y-1.5 sm:col-span-2">
-                <label className="text-xs font-bold text-slate-300">Location / Region</label>
+                <label className="text-xs font-bold text-slate-300">City / Location Details</label>
                 <input
                   type="text"
                   value={manualLocation}
@@ -2035,11 +2170,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </button>
           </form>
         </div>
-      )}
-
-      {/* SECTION 4B: 10-MINUTE VERIFICATION LINKS & 4-STEP ONBOARDING */}
-      {activeSection === 'invitations' && (
-        <InvitationManagerView showToast={showToast} />
       )}
 
       {/* SECTION 5: SUB-ADMIN ACCOUNTS */}

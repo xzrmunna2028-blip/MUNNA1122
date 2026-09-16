@@ -30,7 +30,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const cleanToken = String(token).trim();
-    const invites = AuthStore.getInvitations();
+    const invites = await AuthStore.getInvitations();
     const inv = invites.find((i: any) => i.token.trim().toLowerCase() === cleanToken.toLowerCase());
 
     if (!inv) {
@@ -38,7 +38,7 @@ export default async function handler(req: any, res: any) {
     }
 
     inv.status = 'revoked';
-    AuthStore.saveInvitation(inv);
+    await AuthStore.saveInvitation(inv);
 
     return res.status(200).json({
       success: true,

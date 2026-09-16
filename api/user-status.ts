@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Email parameter is required' });
     }
 
-    const users = AuthStore.getUsers();
+    const users = await AuthStore.getUsers();
     const user = users.find(u => u.email.toLowerCase().trim() === email);
 
     if (!user) {
