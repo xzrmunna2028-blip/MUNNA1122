@@ -333,7 +333,9 @@ export const LiveTestSmsView: React.FC = () => {
 
   const getUserRentedNumbers = (): string[] => {
     try {
-      const raw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      const raw = isAdmin
+        ? (localStorage.getItem('rented_numbers') || localStorage.getItem(`rented_numbers_${currentLoggedUser}`))
+        : localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -358,7 +360,7 @@ export const LiveTestSmsView: React.FC = () => {
         // Regular User: strictly filter by user rented numbers
         const userNums = getUserRentedNumbers();
         if (userNums.length === 0) return [];
-        const saved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('real_sms_logs');
+        const saved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -536,7 +538,7 @@ export const LiveTestSmsView: React.FC = () => {
         } else {
           // Regular user
           const userNums = getUserRentedNumbers();
-          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('real_sms_logs');
+          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
           if (userSaved && userNums.length > 0) {
             const parsed = JSON.parse(userSaved);
             if (Array.isArray(parsed)) {

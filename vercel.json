@@ -20,6 +20,10 @@
       "destination": "/api/user-status?email=$1"
     },
     {
+      "source": "/api/user-workspace/(.*)",
+      "destination": "/api/user-workspace?email=$1"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

@@ -76,7 +76,9 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
 
   const getUserRentedNumbers = (): string[] => {
     try {
-      const raw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      const raw = isAdmin
+        ? (localStorage.getItem('rented_numbers') || localStorage.getItem(`rented_numbers_${currentLoggedUser}`))
+        : localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -130,9 +132,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
         return;
       }
 
-      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || 
-                       localStorage.getItem('user_sms_logs') || 
-                       localStorage.getItem('real_sms_logs');
+      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
       if (existing) {
         try {
           const parsed: any[] = JSON.parse(existing);
@@ -204,7 +204,13 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   }, []);
 
   const handleClear = () => {
-    localStorage.setItem('user_sms_logs', JSON.stringify([]));
+    if (isAdmin) {
+      localStorage.setItem('user_sms_logs', JSON.stringify([]));
+    }
+    if (currentLoggedUser) {
+      localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify([]));
+    }
+    setLiveLogs([]);
     window.dispatchEvent(new Event('user_sms_updated'));
     window.dispatchEvent(new Event('real_sms_updated'));
   };

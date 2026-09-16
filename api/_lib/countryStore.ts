@@ -22,6 +22,8 @@ export const DEFAULT_COUNTRIES: CustomCountry[] = [
   { id: 'CTRY-8', name: 'Bangladesh', code: 'BD', prefix: '+880', flag: '🇧🇩', active: true },
   { id: 'CTRY-9', name: 'Indonesia', code: 'ID', prefix: '+62', flag: '🇮🇩', active: true },
   { id: 'CTRY-10', name: 'Brazil', code: 'BR', prefix: '+55', flag: '🇧🇷', active: true },
+  { id: 'CTRY-11', name: 'Ivory Coast', code: 'CI', prefix: '+225', flag: '🇨🇮', active: true },
+  { id: 'CTRY-12', name: 'Iraq', code: 'IQ', prefix: '+964', flag: '🇮🇶', active: true },
 ];
 
 export class CountryStore {

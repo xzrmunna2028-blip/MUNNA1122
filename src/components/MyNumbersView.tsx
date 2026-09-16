@@ -143,6 +143,13 @@ export const normalizePhoneNumber = (
   if (dial) {
     if (digits.startsWith(dial)) {
       // Already starts with dial code!
+    } else if (dial === '225') {
+      // Ivory Coast (+225): 10 digits (01..., 05..., 07...) or 8 digits
+      if (digits.startsWith('0') && (digits.length === 11 || digits.length === 10)) {
+        digits = '225' + digits.substring(1);
+      } else if (!digits.startsWith('225') && (digits.length === 10 || digits.length === 8)) {
+        digits = '225' + digits;
+      }
     } else if (dial === '964') {
       // Iraq: Mobile prefix 07X (11 digits with 0) or 7X (10 digits without 0)
       if (digits.startsWith('07') && (digits.length === 11 || digits.length === 10)) {
@@ -218,8 +225,29 @@ const maskSmsText = (text: string | undefined | null): string => {
 };
 
 export const MyNumbersView: React.FC = () => {
+  const currentLoggedUser = (typeof window !== 'undefined' ? localStorage.getItem('codeflow_user') || '' : '').toLowerCase().trim();
+  const currentUserRole = (typeof window !== 'undefined' ? localStorage.getItem('codeflow_user_role') || '' : '').toLowerCase().trim();
+  const isAdminUnlocked = typeof window !== 'undefined' && localStorage.getItem('admin_unlocked_payment') === 'true';
+  const isAdmin = currentLoggedUser === 'xzrmunna7788@gmail.com' ||
+    currentLoggedUser === 'xzrmunna974@gmail.com' ||
+    currentLoggedUser === 'xzrmunna7788' ||
+    currentLoggedUser.includes('admin') ||
+    currentUserRole === 'admin' ||
+    currentUserRole === 'master_admin' ||
+    isAdminUnlocked;
+
   const [rentedNumbers, setRentedNumbers] = useState<RentedNumber[]>(() => {
-    return ensureDefaultRentedNumbers();
+    if (isAdmin) {
+      return ensureDefaultRentedNumbers();
+    }
+    const userRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+    if (userRaw) {
+      try {
+        const parsed = JSON.parse(userRaw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
   });
 
   // OTP Session Modal states
@@ -228,13 +256,19 @@ export const MyNumbersView: React.FC = () => {
   const [sessionSelectedLog, setSessionSelectedLog] = useState<RealSmsLog | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('rented_numbers', JSON.stringify(rentedNumbers));
-  }, [rentedNumbers]);
+    if (isAdmin) {
+      localStorage.setItem('rented_numbers', JSON.stringify(rentedNumbers));
+    }
+    if (currentLoggedUser) {
+      localStorage.setItem(`rented_numbers_${currentLoggedUser}`, JSON.stringify(rentedNumbers));
+    }
+  }, [rentedNumbers, isAdmin, currentLoggedUser]);
 
   // Real-time Storage Listener for Admin Updates & OTP Sync
   useEffect(() => {
     const handleStorageChange = () => {
-      const saved = localStorage.getItem('rented_numbers');
+      const storeKey = isAdmin ? 'rented_numbers' : `rented_numbers_${currentLoggedUser}`;
+      const saved = localStorage.getItem(storeKey);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -242,6 +276,8 @@ export const MyNumbersView: React.FC = () => {
             setRentedNumbers(parsed);
           }
         } catch (e) {}
+      } else if (!isAdmin) {
+        setRentedNumbers([]);
       }
     };
     window.addEventListener('storage', handleStorageChange);
@@ -250,14 +286,15 @@ export const MyNumbersView: React.FC = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('codeflow_numbers_updated', handleStorageChange);
     };
-  }, []);
+  }, [isAdmin, currentLoggedUser]);
 
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
   const fetchNumbersFromApi = async () => {
     try {
-      const res = await fetch('/api/my-numbers');
+      const url = isAdmin ? '/api/my-numbers' : `/api/my-numbers?userId=${encodeURIComponent(currentLoggedUser)}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.numbers && Array.isArray(data.numbers)) {
@@ -275,7 +312,12 @@ export const MyNumbersView: React.FC = () => {
             }
           });
           setRentedNumbers(uniqueNumbers);
-          localStorage.setItem('rented_numbers', JSON.stringify(uniqueNumbers));
+          if (isAdmin) {
+            localStorage.setItem('rented_numbers', JSON.stringify(uniqueNumbers));
+          }
+          if (currentLoggedUser) {
+            localStorage.setItem(`rented_numbers_${currentLoggedUser}`, JSON.stringify(uniqueNumbers));
+          }
           if (data.last_updated) {
             setLastApiSync(new Date(data.last_updated).toLocaleTimeString('en-US'));
           }
@@ -285,7 +327,8 @@ export const MyNumbersView: React.FC = () => {
     } catch (e) {
       console.warn('Backend /api/my-numbers fetch failed, falling back to local store:', e);
     }
-    const local = localStorage.getItem('rented_numbers');
+    const storeKey = isAdmin ? 'rented_numbers' : `rented_numbers_${currentLoggedUser}`;
+    const local = localStorage.getItem(storeKey);
     if (local !== null) {
       try {
         const parsed: RentedNumber[] = JSON.parse(local);
@@ -304,6 +347,8 @@ export const MyNumbersView: React.FC = () => {
         });
         setRentedNumbers(uniqueParsed);
       } catch (e) {}
+    } else if (!isAdmin) {
+      setRentedNumbers([]);
     }
   };
 
@@ -532,23 +577,6 @@ export const MyNumbersView: React.FC = () => {
   const [numInputStr, setNumInputStr] = useState<string>('1');
   const [orderType, setOrderType] = useState<'serial' | 'random'>('serial');
 
-  // Determine if logged in user is Admin (xzrmunna or userRole === 'admin')
-  const isAdmin = useMemo(() => {
-    if (typeof window === 'undefined') return true;
-    const user = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
-    const role = (localStorage.getItem('codeflow_user_role') || '').toLowerCase().trim();
-    const isAdminUnlocked = localStorage.getItem('admin_unlocked_payment') === 'true';
-    return (
-      user === 'xzrmunna7788@gmail.com' ||
-      user === 'xzrmunna974@gmail.com' ||
-      user.includes('admin') ||
-      role === 'admin' ||
-      role === 'master_admin' ||
-      isAdminUnlocked ||
-      !user // default to true in preview container if user is blank
-    );
-  }, []);
-
   // Custom Termination / Admin Bulk File creation states
   const [adminModalTab, setAdminModalTab] = useState<'rent' | 'upload_pool'>('rent');
   const [poolUploadSuccessData, setPoolUploadSuccessData] = useState<{ count: number; rangeName: string; country: string; service: string } | null>(null);
@@ -616,6 +644,8 @@ export const MyNumbersView: React.FC = () => {
     { country: 'Oman', flag: '🇴🇲', code: '+968', dial: '968' },
     { country: 'Kuwait', flag: '🇰🇼', code: '+965', dial: '965' },
     { country: 'Iraq', flag: '🇮🇶', code: '+964', dial: '964' },
+    { country: 'Ivory Coast', flag: '🇨🇮', code: '+225', dial: '225' },
+    { country: "Côte d'Ivoire", flag: '🇨🇮', code: '+225', dial: '225' },
     { country: 'Jordan', flag: '🇯🇴', code: '+962', dial: '962' },
     { country: 'Argentina', flag: '🇦🇷', code: '+54', dial: '54' },
     { country: 'Colombia', flag: '🇨🇴', code: '+57', dial: '57' },
@@ -627,6 +657,17 @@ export const MyNumbersView: React.FC = () => {
     { country: 'Mozambique', flag: '🇲🇿', code: '+258', dial: '258' },
     { country: 'Sri Lanka', flag: '🇱🇰', code: '+94', dial: '94' },
   ];
+
+  const getCountryDialCode = (countryName?: string, fallback = '+964'): string => {
+    if (!countryName) return fallback;
+    const lower = countryName.toLowerCase().trim();
+    if (lower.includes('ivory') || lower.includes('cote') || lower.includes("côte")) return '+225';
+    if (lower.includes('iraq')) return '+964';
+    if (lower.includes('bangladesh')) return '+880';
+    if (lower.includes('azerbaijan')) return '+994';
+    const matched = COUNTRY_PRESETS.find(p => p.country.toLowerCase() === lower);
+    return matched ? matched.code : fallback;
+  };
 
   // Popular Media & Platform Services list
   const MEDIA_SERVICES = [
@@ -787,7 +828,7 @@ export const MyNumbersView: React.FC = () => {
 
     setAppendFileName(file.name);
     const ext = file.name.split('.').pop()?.toLowerCase();
-    const countryDial = (COUNTRY_PRESETS.find(p => p.country.toLowerCase() === (appendModalRange.country || '').toLowerCase())?.code || '+964');
+    const countryDial = getCountryDialCode(appendModalRange.country);
 
     if (ext === 'xlsx' || ext === 'xls') {
       const reader = new FileReader();
@@ -1128,6 +1169,7 @@ export const MyNumbersView: React.FC = () => {
   };
 
   const handleOpenAddModal = () => {
+    fetchTerminations();
     setSelectedTerminationCode('');
     setPaymentTerm('default');
     setNumCount(1);
@@ -1220,14 +1262,19 @@ export const MyNumbersView: React.FC = () => {
       await fetch('/api/my-numbers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newNumbers })
+        body: JSON.stringify({ newNumbers, userId: currentLoggedUser })
       });
     } catch (e) {
       console.warn('Backend IPRN range sync notice:', e);
     }
 
     setRentedNumbers((prev) => [...newNumbers, ...prev]);
-    localStorage.setItem('rented_numbers', JSON.stringify([...newNumbers, ...rentedNumbers]));
+    if (isAdmin) {
+      localStorage.setItem('rented_numbers', JSON.stringify([...newNumbers, ...rentedNumbers]));
+    }
+    if (currentLoggedUser) {
+      localStorage.setItem(`rented_numbers_${currentLoggedUser}`, JSON.stringify([...newNumbers, ...rentedNumbers]));
+    }
     window.dispatchEvent(new Event('rented_numbers_updated'));
     setModalStep('success');
   };
@@ -2786,7 +2833,7 @@ export const MyNumbersView: React.FC = () => {
                   {appendFileName ? `Selected: ${appendFileName}` : 'Click to Upload Excel (.xlsx), CSV or TXT File'}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Numbers will be checked against country dial code (e.g. {COUNTRY_PRESETS.find(p => p.country.toLowerCase() === (appendModalRange.country || '').toLowerCase())?.code || '+964'})
+                  Numbers will be checked against country dial code (e.g. {getCountryDialCode(appendModalRange.country)})
                 </p>
               </div>
 
@@ -2799,7 +2846,7 @@ export const MyNumbersView: React.FC = () => {
                   rows={3}
                   value={appendFileRawText}
                   onChange={(e) => {
-                    const countryDial = (COUNTRY_PRESETS.find(p => p.country.toLowerCase() === (appendModalRange.country || '').toLowerCase())?.code || '+964');
+                    const countryDial = getCountryDialCode(appendModalRange.country);
                     processAppendNumbers(e.target.value, appendModalRange.country, countryDial);
                   }}
                   placeholder="Paste numbers here..."

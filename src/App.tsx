@@ -263,7 +263,7 @@ export default function App() {
           }
         } else {
           // Regular user: do not overwrite local workspace with global logs
-          const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+          const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
           let userNums: string[] = [];
           if (userNumRaw) {
             try {
@@ -281,7 +281,6 @@ export default function App() {
             });
             if (userMatched.length > 0) {
               localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
-              localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
               window.dispatchEvent(new Event('real_sms_updated'));
               window.dispatchEvent(new Event('user_sms_updated'));
             }
@@ -375,7 +374,7 @@ export default function App() {
               }
             } else {
               // Regular user: do not overwrite local workspace with global logs
-              const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+              const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
               let userNums: string[] = [];
               if (userNumRaw) {
                 try {
@@ -393,7 +392,6 @@ export default function App() {
                 });
                 if (userMatched.length > 0) {
                   localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
-                  localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
                   window.dispatchEvent(new Event('real_sms_updated'));
                   window.dispatchEvent(new Event('user_sms_updated'));
                 }
@@ -577,7 +575,7 @@ export default function App() {
                   }
                 } else {
                   // Regular user
-                  const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+                  const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
                   let userNums: string[] = [];
                   if (userNumRaw) {
                     try {
@@ -595,7 +593,6 @@ export default function App() {
                     });
                     if (userMatched.length > 0) {
                       localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
-                      localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
                       window.dispatchEvent(new Event('real_sms_updated'));
                       window.dispatchEvent(new Event('user_sms_updated'));
                     }
@@ -857,7 +854,7 @@ export default function App() {
         const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
         logs = existing ? JSON.parse(existing) : [];
       } else {
-        const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+        const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
         let userNums: string[] = [];
         if (userNumRaw) {
           try {
@@ -868,7 +865,7 @@ export default function App() {
           } catch(e) {}
         }
         if (userNums.length > 0) {
-          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
           if (userSaved) {
             try {
               const parsed = JSON.parse(userSaved);
@@ -938,7 +935,7 @@ export default function App() {
       const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
       logs = existing ? JSON.parse(existing) : [];
     } else {
-      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
       let userNums: string[] = [];
       if (userNumRaw) {
         try {
@@ -949,7 +946,7 @@ export default function App() {
         } catch(e) {}
       }
       if (userNums.length > 0) {
-        const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+        const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
         if (userSaved) {
           try {
             const parsed = JSON.parse(userSaved);

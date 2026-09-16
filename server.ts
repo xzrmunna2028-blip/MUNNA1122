@@ -188,10 +188,20 @@ async function startServer() {
   // Dedicated endpoint for My Numbers (GET and POST for automatic IPRN range synchronization)
   app.get('/api/my-numbers', (req, res) => {
     const data = readSyncData();
+    const user = ((req.query?.userId || req.query?.email || '') as string).toLowerCase().trim();
+    const isAdmin = user === 'xzrmunna7788@gmail.com' || user === 'xzrmunna7788';
+    let userNumbers = data.rented_numbers || [];
+    if (user && !isAdmin) {
+      userNumbers = userNumbers.filter((n: any) => {
+        const owner = (n.userId || n.user || n.email || '').toLowerCase().trim();
+        return owner === user;
+      });
+    }
+
     res.json({
       status: 'success',
       last_updated: data.last_updated,
-      numbers: data.rented_numbers || []
+      numbers: userNumbers
     });
   });
 
@@ -676,7 +686,8 @@ async function startServer() {
   });
 
   app.post('/api/my-numbers', (req, res) => {
-    const { newNumbers, numbers } = req.body;
+    const { newNumbers, numbers, userId, email } = req.body;
+    const targetUser = ((userId || email || '') as string).toLowerCase().trim();
     const itemsToAdd = newNumbers || numbers || [];
     if (!Array.isArray(itemsToAdd) || itemsToAdd.length === 0) {
       return res.status(400).json({ status: 'error', message: 'No numbers provided' });
@@ -701,7 +712,8 @@ async function startServer() {
         sidRange: item.sidRange || 'IPRN-Direct',
         multiLimit: item.multiLimit || 'No Limit',
         sidDidLimit: item.sidDidLimit || 'Unlimited',
-        cost: item.cost || item.rate || '0.0096 USD'
+        cost: item.cost || item.rate || '0.0096 USD',
+        userId: item.userId || targetUser || ''
       })).filter((n: any) => !existingNums.has(n.number));
 
       data.rented_numbers = [...formattedAdded, ...existing];
