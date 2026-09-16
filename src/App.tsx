@@ -248,17 +248,44 @@ export default function App() {
           const d = new Date(json.last_updated);
           setLastSyncTime(d.toLocaleTimeString('en-US'));
         }
-        if (json.metrics) {
-          if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
-          if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
-        }
-        if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
-          localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
-          window.dispatchEvent(new Event('real_sms_updated'));
-        }
-        if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
-          localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
-          window.dispatchEvent(new Event('rented_numbers_updated'));
+        if (isAdminUser) {
+          if (json.metrics) {
+            if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+            if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+          }
+          if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
+            localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+            window.dispatchEvent(new Event('real_sms_updated'));
+          }
+          if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
+            localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+            window.dispatchEvent(new Event('rented_numbers_updated'));
+          }
+        } else {
+          // Regular user: do not overwrite local workspace with global logs
+          const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+          let userNums: string[] = [];
+          if (userNumRaw) {
+            try {
+              const p = JSON.parse(userNumRaw);
+              if (Array.isArray(p)) {
+                userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+              }
+            } catch(e) {}
+          }
+          if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
+            const userMatched = json.active_sms_logs.filter((l: any) => {
+              if (!l) return false;
+              const clean = String(l.number || '').replace(/[^0-9]/g, '');
+              return userNums.some(un => clean.includes(un) || un.includes(clean));
+            });
+            if (userMatched.length > 0) {
+              localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+              localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
+              window.dispatchEvent(new Event('real_sms_updated'));
+              window.dispatchEvent(new Event('user_sms_updated'));
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -333,17 +360,44 @@ export default function App() {
               const d = new Date(json.last_updated);
               setLastSyncTime(d.toLocaleTimeString('en-US'));
             }
-            if (json.metrics) {
-              if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
-              if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
-            }
-            if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
-              localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
-              window.dispatchEvent(new Event('real_sms_updated'));
-            }
-            if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
-              localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
-              window.dispatchEvent(new Event('rented_numbers_updated'));
+            if (isAdminUser) {
+              if (json.metrics) {
+                if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+                if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+              }
+              if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
+                localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+                window.dispatchEvent(new Event('real_sms_updated'));
+              }
+              if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
+                localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+                window.dispatchEvent(new Event('rented_numbers_updated'));
+              }
+            } else {
+              // Regular user: do not overwrite local workspace with global logs
+              const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+              let userNums: string[] = [];
+              if (userNumRaw) {
+                try {
+                  const p = JSON.parse(userNumRaw);
+                  if (Array.isArray(p)) {
+                    userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+                  }
+                } catch(e) {}
+              }
+              if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
+                const userMatched = json.active_sms_logs.filter((l: any) => {
+                  if (!l) return false;
+                  const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                  return userNums.some(un => clean.includes(un) || un.includes(clean));
+                });
+                if (userMatched.length > 0) {
+                  localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+                  localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
+                  window.dispatchEvent(new Event('real_sms_updated'));
+                  window.dispatchEvent(new Event('user_sms_updated'));
+                }
+              }
             }
           }
         }
@@ -508,17 +562,44 @@ export default function App() {
                   const d = new Date(json.last_updated);
                   setLastSyncTime(d.toLocaleTimeString('en-US'));
                 }
-                if (json.metrics) {
-                  if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
-                  if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
-                }
-                if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
-                  localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
-                  window.dispatchEvent(new Event('real_sms_updated'));
-                }
-                if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
-                  localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
-                  window.dispatchEvent(new Event('rented_numbers_updated'));
+                if (isAdminUser) {
+                  if (json.metrics) {
+                    if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+                    if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+                  }
+                  if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
+                    localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
+                    window.dispatchEvent(new Event('real_sms_updated'));
+                  }
+                  if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
+                    localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+                    window.dispatchEvent(new Event('rented_numbers_updated'));
+                  }
+                } else {
+                  // Regular user
+                  const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+                  let userNums: string[] = [];
+                  if (userNumRaw) {
+                    try {
+                      const p = JSON.parse(userNumRaw);
+                      if (Array.isArray(p)) {
+                        userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+                      }
+                    } catch(e) {}
+                  }
+                  if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
+                    const userMatched = json.active_sms_logs.filter((l: any) => {
+                      if (!l) return false;
+                      const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                      return userNums.some(un => clean.includes(un) || un.includes(clean));
+                    });
+                    if (userMatched.length > 0) {
+                      localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+                      localStorage.setItem('real_sms_logs', JSON.stringify(userMatched));
+                      window.dispatchEvent(new Event('real_sms_updated'));
+                      window.dispatchEvent(new Event('user_sms_updated'));
+                    }
+                  }
                 }
               }
             }
@@ -771,8 +852,37 @@ export default function App() {
   // Synchronize state with real-time user_sms_logs database
   useEffect(() => {
     const syncWithLocalStorage = () => {
-      const existing = localStorage.getItem('user_sms_logs');
-      const logs = existing ? JSON.parse(existing) : [];
+      let logs: any[] = [];
+      if (isAdminUser) {
+        const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+        logs = existing ? JSON.parse(existing) : [];
+      } else {
+        const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+        let userNums: string[] = [];
+        if (userNumRaw) {
+          try {
+            const p = JSON.parse(userNumRaw);
+            if (Array.isArray(p)) {
+              userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+            }
+          } catch(e) {}
+        }
+        if (userNums.length > 0) {
+          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+          if (userSaved) {
+            try {
+              const parsed = JSON.parse(userSaved);
+              if (Array.isArray(parsed)) {
+                logs = parsed.filter((l: any) => {
+                  if (!l) return false;
+                  const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                  return userNums.some(un => clean.includes(un) || un.includes(clean));
+                });
+              }
+            } catch(e) {}
+          }
+        }
+      }
       
       const total = logs.length;
       const delivered = logs.filter((l: any) => l.status === 'DELIVERED').length;
@@ -804,11 +914,13 @@ export default function App() {
 
     window.addEventListener('storage', syncWithLocalStorage);
     window.addEventListener('user_sms_updated', syncWithLocalStorage);
+    window.addEventListener('real_sms_updated', syncWithLocalStorage);
     return () => {
       window.removeEventListener('storage', syncWithLocalStorage);
       window.removeEventListener('user_sms_updated', syncWithLocalStorage);
+      window.removeEventListener('real_sms_updated', syncWithLocalStorage);
     };
-  }, []);
+  }, [isAdminUser, currentLoggedUser]);
 
   // Update HTML root element dark class when darkMode state toggles
   useEffect(() => {
@@ -821,8 +933,37 @@ export default function App() {
 
   // Determine current metric data dynamically based on user's personal logs
   const getActiveMetricData = (): MetricData => {
-    const existing = localStorage.getItem('user_sms_logs');
-    const logs: any[] = existing ? JSON.parse(existing) : [];
+    let logs: any[] = [];
+    if (isAdminUser) {
+      const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+      logs = existing ? JSON.parse(existing) : [];
+    } else {
+      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      let userNums: string[] = [];
+      if (userNumRaw) {
+        try {
+          const p = JSON.parse(userNumRaw);
+          if (Array.isArray(p)) {
+            userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+          }
+        } catch(e) {}
+      }
+      if (userNums.length > 0) {
+        const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
+        if (userSaved) {
+          try {
+            const parsed = JSON.parse(userSaved);
+            if (Array.isArray(parsed)) {
+              logs = parsed.filter((l: any) => {
+                if (!l) return false;
+                const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                return userNums.some(un => clean.includes(un) || un.includes(clean));
+              });
+            }
+          } catch(e) {}
+        }
+      }
+    }
 
     const totalCount = logs.length;
     const deliveredCount = logs.filter((l: any) => l.status === 'DELIVERED').length;

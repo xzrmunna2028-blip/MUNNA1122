@@ -92,8 +92,8 @@ export class CoreStore {
         }
       }
     } catch {}
-    // Default to suppressing Firestore writes if quota was reached
-    return Date.now() + 24 * 60 * 60 * 1000;
+    // Default to 0 (normal Firestore connectivity)
+    return 0;
   })(); // Timestamp until which Firestore writes should be bypassed
 
   private static saveLocalBackup(data: SyncData): void {

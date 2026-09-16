@@ -71,40 +71,94 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
-  // Sync with real-time logs in user_sms_logs and server endpoint (/api/active-sms)
-  const loadLogs = async () => {
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+  const isAdmin = currentLoggedUser === 'xzrmunna7788@gmail.com' || currentLoggedUser === 'xzrmunna7788';
+
+  const getUserRentedNumbers = (): string[] => {
     try {
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
-          const mapped: SmsLog[] = data.logs.map((l: any) => ({
-            timestamp: l.timestamp || new Date().toISOString(),
-            status: l.status || 'DELIVERED',
-            termination: l.termination || 'Route',
-            number: l.number || '',
-            sid: l.sid || l.brand || 'Service',
-            cost: l.cost || '0.0096 USD',
-            text: l.text || '',
-            otp: l.otp || '',
-            service: l.service || l.brand || 'Service'
-          }));
-          setLiveLogs(mapped);
-          localStorage.setItem('user_sms_logs', JSON.stringify(mapped));
-          return;
+      const raw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
         }
       }
-    } catch (e) {}
+    } catch(e) {}
+    return [];
+  };
 
-    const existing = localStorage.getItem('user_sms_logs');
-    if (existing) {
+  // Sync with real-time logs in user_sms_logs and server endpoint (/api/active-sms)
+  const loadLogs = async () => {
+    if (isAdmin) {
       try {
-        const parsed: SmsLog[] = JSON.parse(existing);
-        setLiveLogs(parsed.map(l => ({ ...l, cost: l.cost || '0.0096 USD' })));
-        return;
+        const res = await fetch('/api/active-sms');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.logs && Array.isArray(data.logs)) {
+            const mapped: SmsLog[] = data.logs.map((l: any) => ({
+              timestamp: l.timestamp || new Date().toISOString(),
+              status: l.status || 'DELIVERED',
+              termination: l.termination || 'Route',
+              number: l.number || '',
+              sid: l.sid || l.brand || 'Service',
+              cost: l.cost || '0.0096 USD',
+              text: l.text || '',
+              otp: l.otp || '',
+              service: l.service || l.brand || 'Service'
+            }));
+            setLiveLogs(mapped);
+            localStorage.setItem('user_sms_logs', JSON.stringify(mapped));
+            return;
+          }
+        }
       } catch (e) {}
+
+      const existing = localStorage.getItem('user_sms_logs');
+      if (existing) {
+        try {
+          const parsed: SmsLog[] = JSON.parse(existing);
+          setLiveLogs(parsed.map(l => ({ ...l, cost: l.cost || '0.0096 USD' })));
+          return;
+        } catch (e) {}
+      }
+      setLiveLogs([]);
+    } else {
+      // Regular user: only show SMS matching user's rented numbers
+      const userNums = getUserRentedNumbers();
+      if (userNums.length === 0) {
+        setLiveLogs([]);
+        return;
+      }
+
+      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || 
+                       localStorage.getItem('user_sms_logs') || 
+                       localStorage.getItem('real_sms_logs');
+      if (existing) {
+        try {
+          const parsed: any[] = JSON.parse(existing);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter(l => {
+              if (!l) return false;
+              const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+              return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+            }).map((l: any) => ({
+              timestamp: l.timestamp || new Date().toISOString(),
+              status: l.status || 'DELIVERED',
+              termination: l.termination || 'Route',
+              number: l.number || '',
+              sid: l.sid || l.brand || 'Service',
+              cost: l.cost || '0.0096 USD',
+              text: l.text || '',
+              otp: l.otp || '',
+              service: l.service || l.brand || 'Service'
+            }));
+            setLiveLogs(filtered);
+            return;
+          }
+        } catch (e) {}
+      }
+      setLiveLogs([]);
     }
-    setLiveLogs([]);
   };
 
   const handleSyncWithIprn = async () => {

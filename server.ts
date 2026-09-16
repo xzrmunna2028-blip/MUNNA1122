@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import { exec } from 'child_process';
 import { createServer as createViteServer } from 'vite';
 import { CoreStore, CustomTermStore } from './api/_lib/store.js';
+import { CountryStore } from './api/_lib/countryStore.js';
+import { WorkspaceStore } from './api/_lib/workspaceStore.js';
 import { AuthStore } from './api/_lib/authStore.js';
 import { KSI_MASTER_TERMINATIONS } from './src/data/ksiMasterRanges.ts';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -373,80 +375,40 @@ async function startServer() {
     }
   });
 
-  // Dedicated endpoint for Custom Countries registry
-  const countriesFilePath = path.join(process.cwd(), 'custom_countries.json');
-  const readCustomCountries = (): any[] => {
+  // Dedicated endpoint for Custom Countries registry with Firestore backing
+  app.get('/api/countries-list', async (req, res) => {
     try {
-      if (fs.existsSync(countriesFilePath)) {
-        return JSON.parse(fs.readFileSync(countriesFilePath, 'utf8'));
-      }
-    } catch (e) {}
-    return [
-      { id: 'CTRY-1', name: 'Azerbaijan', code: 'AZ', prefix: '+994', flag: '🇦🇿', active: true },
-      { id: 'CTRY-2', name: 'United States', code: 'US', prefix: '+1', flag: '🇺🇸', active: true },
-      { id: 'CTRY-3', name: 'United Kingdom', code: 'GB', prefix: '+44', flag: '🇬🇧', active: true },
-      { id: 'CTRY-4', name: 'Germany', code: 'DE', prefix: '+49', flag: '🇩🇪', active: true },
-      { id: 'CTRY-5', name: 'France', code: 'FR', prefix: '+33', flag: '🇫🇷', active: true },
-      { id: 'CTRY-6', name: 'Spain', code: 'ES', prefix: '+34', flag: '🇪🇸', active: true },
-      { id: 'CTRY-7', name: 'Netherlands', code: 'NL', prefix: '+31', flag: '🇳🇱', active: true },
-      { id: 'CTRY-8', name: 'Bangladesh', code: 'BD', prefix: '+880', flag: '🇧🇩', active: true },
-      { id: 'CTRY-9', name: 'Indonesia', code: 'ID', prefix: '+62', flag: '🇮🇩', active: true },
-      { id: 'CTRY-10', name: 'Brazil', code: 'BR', prefix: '+55', flag: '🇧🇷', active: true },
-    ];
-  };
-
-  const saveCustomCountries = (list: any[]) => {
-    try {
-      fs.writeFileSync(countriesFilePath, JSON.stringify(list, null, 2), 'utf8');
-    } catch (e) {}
-  };
-
-  app.get('/api/countries-list', (req, res) => {
-    const list = readCustomCountries();
-    res.json({ status: 'success', countries: list });
+      const list = await CountryStore.getAll();
+      res.json({ status: 'success', countries: list });
+    } catch (e: any) {
+      res.status(500).json({ status: 'error', message: e.message });
+    }
   });
 
-  app.post('/api/countries-list', (req, res) => {
+  app.post('/api/countries-list', async (req, res) => {
     try {
       const { country } = req.body;
       if (!country || !country.name) {
         return res.status(400).json({ status: 'error', message: 'Country name is required.' });
       }
 
-      let list = readCustomCountries();
-      const newCountry = {
-        id: country.id || `CTRY-${Date.now()}`,
-        name: country.name.trim(),
-        code: (country.code || country.name.substring(0, 2)).toUpperCase().trim(),
-        prefix: country.prefix ? (country.prefix.startsWith('+') ? country.prefix : `+${country.prefix}`) : '+1',
-        flag: country.flag || '🌐',
-        active: country.active !== undefined ? country.active : true,
-      };
-
-      const existingIdx = list.findIndex(c => c.id === newCountry.id || c.name.toLowerCase() === newCountry.name.toLowerCase());
-      if (existingIdx !== -1) {
-        list[existingIdx] = { ...list[existingIdx], ...newCountry };
-      } else {
-        list.push(newCountry);
-      }
-
-      saveCustomCountries(list);
+      const saved = await CountryStore.save(country);
+      const list = await CountryStore.getAll();
       broadcastRealtimeEvent({ type: 'countries_updated', countries: list });
 
-      res.json({ status: 'success', message: `Country ${newCountry.name} saved successfully.`, countries: list });
+      res.json({ status: 'success', message: `Country ${saved.name} saved successfully.`, country: saved, countries: list });
     } catch (e: any) {
       res.status(500).json({ status: 'error', message: e.message });
     }
   });
 
-  app.delete('/api/countries-list/:id', (req, res) => {
+  app.delete('/api/countries-list/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      let list = readCustomCountries();
-      const updated = list.filter(c => c.id !== id && c.code !== id && c.name.toLowerCase() !== id.toLowerCase());
-      saveCustomCountries(updated);
-      broadcastRealtimeEvent({ type: 'countries_updated', countries: updated });
-      res.json({ status: 'success', message: 'Country deleted.', countries: updated });
+      await CountryStore.delete(id);
+      const list = await CountryStore.getAll();
+      broadcastRealtimeEvent({ type: 'countries_updated', countries: list });
+      res.json({ status: 'success', message: 'Country deleted.', countries: list });
     } catch (e: any) {
       res.status(500).json({ status: 'error', message: e.message });
     }
@@ -2684,47 +2646,22 @@ function getCountryByPhoneNumber(phone: string): string {
     }
   };
 
-  app.get('/api/user-workspace/:email', (req, res) => {
+  app.get('/api/user-workspace/:email', async (req, res) => {
     try {
       const email = req.params.email.toLowerCase().trim();
-      const allStores = readUserWorkspaces();
-      const userStore = allStores[email] || {
-        email,
-        rented_numbers: [],
-        test_numbers: [],
-        sms_logs: [],
-        notifications: [],
-        profile: null,
-      };
+      const userStore = await WorkspaceStore.get(email);
       res.json({ success: true, workspace: userStore });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  app.post('/api/user-workspace/:email', (req, res) => {
+  app.post('/api/user-workspace/:email', async (req, res) => {
     try {
       const email = req.params.email.toLowerCase().trim();
       const incoming = req.body || {};
-      const allStores = readUserWorkspaces();
-      const existing = allStores[email] || {
-        email,
-        rented_numbers: [],
-        test_numbers: [],
-        sms_logs: [],
-        notifications: [],
-        profile: null,
-      };
-
-      const updatedWorkspace = {
-        ...existing,
-        ...incoming,
-        email,
-        lastUpdated: new Date().toISOString(),
-      };
-
-      allStores[email] = updatedWorkspace;
-      saveUserWorkspaces(allStores);
+      const success = await WorkspaceStore.save(email, incoming);
+      const updatedWorkspace = await WorkspaceStore.get(email);
 
       broadcastRealtimeEvent({
         type: 'user_workspace_updated',

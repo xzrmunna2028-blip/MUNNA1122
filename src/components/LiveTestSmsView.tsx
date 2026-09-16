@@ -327,13 +327,47 @@ export const LiveTestSmsView: React.FC = () => {
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [keySaveMessage, setKeySaveMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
+  // User session & admin scope
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+  const isAdmin = currentLoggedUser === 'xzrmunna7788@gmail.com' || currentLoggedUser === 'xzrmunna7788';
+
+  const getUserRentedNumbers = (): string[] => {
+    try {
+      const raw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`) || localStorage.getItem('rented_numbers');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+        }
+      }
+    } catch(e) {}
+    return [];
+  };
+
   const [liveLogs, setLiveLogs] = useState<SmsLog[]>(() => {
     try {
-      const saved = localStorage.getItem('real_sms_logs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((log: any) => log && typeof log === 'object');
+      if (isAdmin) {
+        const saved = localStorage.getItem('real_sms_logs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((log: any) => log && typeof log === 'object');
+          }
+        }
+      } else {
+        // Regular User: strictly filter by user rented numbers
+        const userNums = getUserRentedNumbers();
+        if (userNums.length === 0) return [];
+        const saved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('real_sms_logs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((log: any) => {
+              if (!log || typeof log !== 'object') return false;
+              const cleanNum = String(log.number || '').replace(/[^0-9]/g, '');
+              return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+            });
+          }
         }
       }
       return [];
@@ -347,6 +381,9 @@ export const LiveTestSmsView: React.FC = () => {
 
   // Dynamic real-time counters
   const [totalMessagesStat, setTotalMessagesStat] = useState<number>(() => {
+    if (!isAdmin) {
+      return liveLogs.length;
+    }
     try {
       const val = localStorage.getItem('total_messages_stat');
       return val ? parseInt(val, 10) : 0;
@@ -355,6 +392,9 @@ export const LiveTestSmsView: React.FC = () => {
     }
   });
   const [rangesStat, setRangesStat] = useState<number>(() => {
+    if (!isAdmin) {
+      return getUserRentedNumbers().length;
+    }
     try {
       const val = localStorage.getItem('ranges_stat');
       return val ? parseInt(val, 10) : 0;
@@ -467,30 +507,60 @@ export const LiveTestSmsView: React.FC = () => {
   useEffect(() => {
     const handleSmsUpdated = () => {
       try {
-        const saved = localStorage.getItem('real_sms_logs');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            const freshLogs: SmsLog[] = parsed.map((l: any) => ({
-              ...l,
-              cost: l.cost || '0.0100 USD'
-            }));
-            const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-              playSmsSound();
+        if (isAdmin) {
+          const saved = localStorage.getItem('real_sms_logs');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              const freshLogs: SmsLog[] = parsed.map((l: any) => ({
+                ...l,
+                cost: l.cost || '0.0100 USD'
+              }));
+              const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                playSmsSound();
+              }
+              prevFirstIdRef.current = newestId;
+              setLiveLogs(freshLogs);
             }
-            prevFirstIdRef.current = newestId;
-            setLiveLogs(freshLogs);
           }
-        }
 
-        const savedMessages = localStorage.getItem('total_messages_stat');
-        if (savedMessages) {
-          setTotalMessagesStat(parseInt(savedMessages, 10));
-        }
-        const savedRanges = localStorage.getItem('ranges_stat');
-        if (savedRanges) {
-          setRangesStat(parseInt(savedRanges, 10));
+          const savedMessages = localStorage.getItem('total_messages_stat');
+          if (savedMessages) {
+            setTotalMessagesStat(parseInt(savedMessages, 10));
+          }
+          const savedRanges = localStorage.getItem('ranges_stat');
+          if (savedRanges) {
+            setRangesStat(parseInt(savedRanges, 10));
+          }
+        } else {
+          // Regular user
+          const userNums = getUserRentedNumbers();
+          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`) || localStorage.getItem('real_sms_logs');
+          if (userSaved && userNums.length > 0) {
+            const parsed = JSON.parse(userSaved);
+            if (Array.isArray(parsed)) {
+              const filtered = parsed.filter(l => {
+                if (!l) return false;
+                const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+                return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+              }).map((l: any) => ({
+                ...l,
+                cost: l.cost || '0.0100 USD'
+              }));
+              const newestId = filtered[0]?.id || filtered[0]?.timestamp || '';
+              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                playSmsSound();
+              }
+              prevFirstIdRef.current = newestId;
+              setLiveLogs(filtered);
+              setTotalMessagesStat(filtered.length);
+            }
+          } else {
+            setLiveLogs([]);
+            setTotalMessagesStat(0);
+          }
+          setRangesStat(userNums.length);
         }
       } catch (err) {
         console.warn('Error syncing live test SMS logs from custom event:', err);
@@ -503,47 +573,87 @@ export const LiveTestSmsView: React.FC = () => {
       window.removeEventListener('real_sms_updated', handleSmsUpdated);
       window.removeEventListener('real_sms_updated_event', handleSmsUpdated);
     };
-  }, [soundEnabled]);
+  }, [soundEnabled, isAdmin, currentLoggedUser]);
 
   // Sync logs and metrics via direct fetch
   const fetchLatestData = async () => {
     if (!isLiveActive) return;
     try {
-      // 1. Fetch dashboard metrics for live counters
-      const metricsRes = await fetch('/api/dashboard-metrics');
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        if (data?.metrics?.messages !== undefined) {
-          setTotalMessagesStat(data.metrics.messages);
-          localStorage.setItem('total_messages_stat', data.metrics.messages.toString());
-        }
-        if (data?.metrics?.totalRanges !== undefined) {
-          setRangesStat(data.metrics.totalRanges);
-          localStorage.setItem('ranges_stat', data.metrics.totalRanges.toString());
-        }
-      }
-
-      // 2. Fetch active live SMS logs
-      const smsRes = await fetch('/api/active-sms');
-      if (smsRes.ok) {
-        const smsData = await smsRes.json();
-        if (smsData.logs && Array.isArray(smsData.logs)) {
-          const freshLogs: SmsLog[] = smsData.logs.map((l: any) => ({
-            ...l,
-            cost: l.cost || '0.0100 USD'
-          }));
-
-          const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-          if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-            playSmsSound();
+      if (isAdmin) {
+        // 1. Fetch dashboard metrics for live counters (Admin only)
+        const metricsRes = await fetch('/api/dashboard-metrics');
+        if (metricsRes.ok) {
+          const data = await metricsRes.json();
+          if (data?.metrics?.messages !== undefined) {
+            setTotalMessagesStat(data.metrics.messages);
+            localStorage.setItem('total_messages_stat', data.metrics.messages.toString());
           }
-          prevFirstIdRef.current = newestId;
+          if (data?.metrics?.totalRanges !== undefined) {
+            setRangesStat(data.metrics.totalRanges);
+            localStorage.setItem('ranges_stat', data.metrics.totalRanges.toString());
+          }
+        }
 
-          setLiveLogs(freshLogs);
-          localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
-          setIsConnected(true);
-          if (smsData.last_updated) {
-            setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+        // 2. Fetch active live SMS logs (Admin only)
+        const smsRes = await fetch('/api/active-sms');
+        if (smsRes.ok) {
+          const smsData = await smsRes.json();
+          if (smsData.logs && Array.isArray(smsData.logs)) {
+            const freshLogs: SmsLog[] = smsData.logs.map((l: any) => ({
+              ...l,
+              cost: l.cost || '0.0100 USD'
+            }));
+
+            const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+              playSmsSound();
+            }
+            prevFirstIdRef.current = newestId;
+
+            setLiveLogs(freshLogs);
+            localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+            setIsConnected(true);
+            if (smsData.last_updated) {
+              setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+            }
+          }
+        }
+      } else {
+        // Non-admin user: inspect stream for user's own rented numbers
+        const userNums = getUserRentedNumbers();
+        setRangesStat(userNums.length);
+
+        if (userNums.length === 0) {
+          setLiveLogs([]);
+          setTotalMessagesStat(0);
+          return;
+        }
+
+        const smsRes = await fetch('/api/active-sms');
+        if (smsRes.ok) {
+          const smsData = await smsRes.json();
+          if (smsData.logs && Array.isArray(smsData.logs)) {
+            const matchedLogs: SmsLog[] = smsData.logs
+              .filter((l: any) => {
+                if (!l) return false;
+                const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+                return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+              })
+              .map((l: any) => ({
+                ...l,
+                cost: l.cost || '0.0100 USD'
+              }));
+
+            const newestId = matchedLogs[0]?.id || matchedLogs[0]?.timestamp || '';
+            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+              playSmsSound();
+            }
+            prevFirstIdRef.current = newestId;
+
+            setLiveLogs(matchedLogs);
+            setTotalMessagesStat(matchedLogs.length);
+            localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(matchedLogs));
+            setIsConnected(true);
           }
         }
       }
@@ -564,26 +674,64 @@ export const LiveTestSmsView: React.FC = () => {
         try {
           const payload = JSON.parse(event.data);
           if (payload) {
-            if (payload.metrics?.messages !== undefined) {
-              setTotalMessagesStat(payload.metrics.messages);
-            }
-            if (payload.metrics?.totalRanges !== undefined) {
-              setRangesStat(payload.metrics.totalRanges);
-            }
-            if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
-              const freshLogs: SmsLog[] = payload.active_sms_logs.map((l: any) => ({
-                ...l,
-                cost: l.cost || '0.0100 USD'
-              }));
-              const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-                playSmsSound();
+            if (isAdmin) {
+              if (payload.metrics?.messages !== undefined) {
+                setTotalMessagesStat(payload.metrics.messages);
               }
-              prevFirstIdRef.current = newestId;
-              setLiveLogs(freshLogs);
-              localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
-              if (payload.last_updated) {
-                setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+              if (payload.metrics?.totalRanges !== undefined) {
+                setRangesStat(payload.metrics.totalRanges);
+              }
+              if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
+                const freshLogs: SmsLog[] = payload.active_sms_logs.map((l: any) => ({
+                  ...l,
+                  cost: l.cost || '0.0100 USD'
+                }));
+                const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+                if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                  playSmsSound();
+                }
+                prevFirstIdRef.current = newestId;
+                setLiveLogs(freshLogs);
+                localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+                if (payload.last_updated) {
+                  setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+                }
+              }
+            } else {
+              // Regular user in SSE
+              const userNums = getUserRentedNumbers();
+              setRangesStat(userNums.length);
+
+              if (userNums.length === 0) {
+                setLiveLogs([]);
+                setTotalMessagesStat(0);
+                return;
+              }
+
+              if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
+                const matchedLogs: SmsLog[] = payload.active_sms_logs
+                  .filter((l: any) => {
+                    if (!l) return false;
+                    const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+                    return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+                  })
+                  .map((l: any) => ({
+                    ...l,
+                    cost: l.cost || '0.0100 USD'
+                  }));
+
+                const newestId = matchedLogs[0]?.id || matchedLogs[0]?.timestamp || '';
+                if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                  playSmsSound();
+                }
+                prevFirstIdRef.current = newestId;
+
+                setLiveLogs(matchedLogs);
+                setTotalMessagesStat(matchedLogs.length);
+                localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(matchedLogs));
+                if (payload.last_updated) {
+                  setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
+                }
               }
             }
           }
@@ -600,7 +748,7 @@ export const LiveTestSmsView: React.FC = () => {
         eventSource.close();
       }
     };
-  }, [isLiveActive]);
+  }, [isLiveActive, isAdmin, currentLoggedUser]);
 
   // Polling fallback every 2.5 seconds to guarantee active feed
   useEffect(() => {
@@ -660,21 +808,6 @@ export const LiveTestSmsView: React.FC = () => {
     });
     return Array.from(list).sort();
   }, [liveLogs]);
-
-  // Determine if logged in user is Admin
-  const isAdmin = useMemo(() => {
-    if (typeof window === 'undefined') return true;
-    const user = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
-    const role = (localStorage.getItem('codeflow_user_role') || '').toLowerCase().trim();
-    return (
-      user === 'xzrmunna7788@gmail.com' ||
-      user === 'xzrmunna7788' ||
-      user === 'xzrmunna974@gmail.com' ||
-      user.includes('admin') ||
-      role === 'admin' ||
-      role === 'master_admin'
-    );
-  }, []);
 
   // Universal Country Flag Renderer with high-definition CDN images for 100% consistent flags
   const renderFlag = (termination: string, phoneNumber?: string) => {

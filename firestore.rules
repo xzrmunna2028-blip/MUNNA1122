@@ -82,5 +82,25 @@ service cloud.firestore {
     match /broadcast_notices/{noticeId} {
       allow read, write: if true;
     }
+
+    match /custom_countries/{countryId} {
+      allow read, write: if true;
+    }
+
+    match /user_workspaces/{userEmail} {
+      allow read, write: if true;
+    }
+
+    match /system_maintenance/{id} {
+      allow read, write: if true;
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    match /user_notifications/{id} {
+      allow read, write: if true;
+    }
   }
 }
