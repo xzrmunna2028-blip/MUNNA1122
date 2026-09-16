@@ -76,9 +76,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
 
   const getUserRentedNumbers = (): string[] => {
     try {
-      const raw = isAdmin
-        ? (localStorage.getItem('rented_numbers') || localStorage.getItem(`rented_numbers_${currentLoggedUser}`))
-        : localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+      const raw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -89,76 +87,40 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
     return [];
   };
 
-  // Sync with real-time logs in user_sms_logs and server endpoint (/api/active-sms)
+  // Sync with real-time logs strictly scoped to user's rented numbers
   const loadLogs = async () => {
-    if (isAdmin) {
+    const userNums = getUserRentedNumbers();
+    if (userNums.length === 0) {
+      setLiveLogs([]);
+      return;
+    }
+
+    const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
+    if (existing) {
       try {
-        const res = await fetch('/api/active-sms');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.logs && Array.isArray(data.logs)) {
-            const mapped: SmsLog[] = data.logs.map((l: any) => ({
-              timestamp: l.timestamp || new Date().toISOString(),
-              status: l.status || 'DELIVERED',
-              termination: l.termination || 'Route',
-              number: l.number || '',
-              sid: l.sid || l.brand || 'Service',
-              cost: l.cost || '0.0096 USD',
-              text: l.text || '',
-              otp: l.otp || '',
-              service: l.service || l.brand || 'Service'
-            }));
-            setLiveLogs(mapped);
-            localStorage.setItem('user_sms_logs', JSON.stringify(mapped));
-            return;
-          }
+        const parsed: any[] = JSON.parse(existing);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(l => {
+            if (!l) return false;
+            const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+            return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+          }).map((l: any) => ({
+            timestamp: l.timestamp || new Date().toISOString(),
+            status: l.status || 'DELIVERED',
+            termination: l.termination || 'Route',
+            number: l.number || '',
+            sid: l.sid || l.brand || 'Service',
+            cost: l.cost || '0.0096 USD',
+            text: l.text || '',
+            otp: l.otp || '',
+            service: l.service || l.brand || 'Service'
+          }));
+          setLiveLogs(filtered);
+          return;
         }
       } catch (e) {}
-
-      const existing = localStorage.getItem('user_sms_logs');
-      if (existing) {
-        try {
-          const parsed: SmsLog[] = JSON.parse(existing);
-          setLiveLogs(parsed.map(l => ({ ...l, cost: l.cost || '0.0096 USD' })));
-          return;
-        } catch (e) {}
-      }
-      setLiveLogs([]);
-    } else {
-      // Regular user: only show SMS matching user's rented numbers
-      const userNums = getUserRentedNumbers();
-      if (userNums.length === 0) {
-        setLiveLogs([]);
-        return;
-      }
-
-      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
-      if (existing) {
-        try {
-          const parsed: any[] = JSON.parse(existing);
-          if (Array.isArray(parsed)) {
-            const filtered = parsed.filter(l => {
-              if (!l) return false;
-              const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
-              return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
-            }).map((l: any) => ({
-              timestamp: l.timestamp || new Date().toISOString(),
-              status: l.status || 'DELIVERED',
-              termination: l.termination || 'Route',
-              number: l.number || '',
-              sid: l.sid || l.brand || 'Service',
-              cost: l.cost || '0.0096 USD',
-              text: l.text || '',
-              otp: l.otp || '',
-              service: l.service || l.brand || 'Service'
-            }));
-            setLiveLogs(filtered);
-            return;
-          }
-        } catch (e) {}
-      }
-      setLiveLogs([]);
     }
+    setLiveLogs([]);
   };
 
   const handleSyncWithIprn = async () => {
@@ -204,9 +166,7 @@ export const ClientActiveSmsView: React.FC<ClientActiveSmsViewProps> = ({
   }, []);
 
   const handleClear = () => {
-    if (isAdmin) {
-      localStorage.setItem('user_sms_logs', JSON.stringify([]));
-    }
+    localStorage.removeItem('user_sms_logs');
     if (currentLoggedUser) {
       localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify([]));
     }

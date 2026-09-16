@@ -238,7 +238,7 @@ export default function App() {
   const fetchIprnMetrics = async (isManual = false) => {
     if (isManual) setIsSyncing(true);
     try {
-      const res = await fetch('/api/dashboard-metrics', {
+      const res = await fetch(`/api/dashboard-metrics?userId=${encodeURIComponent(currentLoggedUser)}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
@@ -310,17 +310,19 @@ export default function App() {
             const d = new Date(json.data.last_updated);
             setLastSyncTime(d.toLocaleTimeString('en-US'));
           }
-          if (json.data.metrics) {
-            if (json.data.metrics.messages) localStorage.setItem('total_messages_stat', json.data.metrics.messages.toString());
-            if (json.data.metrics.totalRanges) localStorage.setItem('ranges_stat', json.data.metrics.totalRanges.toString());
-          }
-          if (json.data.active_sms_logs && Array.isArray(json.data.active_sms_logs)) {
-            localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
-            window.dispatchEvent(new Event('real_sms_updated'));
-          }
-          if (json.data.rented_numbers && Array.isArray(json.data.rented_numbers)) {
-            localStorage.setItem('rented_numbers', JSON.stringify(json.data.rented_numbers));
-            window.dispatchEvent(new Event('rented_numbers_updated'));
+          if (isAdminUser) {
+            if (json.data.metrics) {
+              if (json.data.metrics.messages) localStorage.setItem('total_messages_stat', json.data.metrics.messages.toString());
+              if (json.data.metrics.totalRanges) localStorage.setItem('ranges_stat', json.data.metrics.totalRanges.toString());
+            }
+            if (json.data.active_sms_logs && Array.isArray(json.data.active_sms_logs)) {
+              localStorage.setItem('real_sms_logs', JSON.stringify(json.data.active_sms_logs));
+              window.dispatchEvent(new Event('real_sms_updated'));
+            }
+            if (json.data.rented_numbers && Array.isArray(json.data.rented_numbers)) {
+              localStorage.setItem('rented_numbers', JSON.stringify(json.data.rented_numbers));
+              window.dispatchEvent(new Event('rented_numbers_updated'));
+            }
           }
         }
         // Push a fresh notification
@@ -654,6 +656,19 @@ export default function App() {
 
     // Purge any legacy demo broadcast announcements or notifications
     try {
+      localStorage.removeItem('user_sms_logs');
+      localStorage.removeItem('real_sms_logs');
+      localStorage.removeItem('total_messages_stat');
+      localStorage.removeItem('ranges_stat');
+
+      const user = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+      if (user) {
+        const userNumRaw = localStorage.getItem(`rented_numbers_${user}`);
+        if (!userNumRaw || userNumRaw === '[]') {
+          localStorage.removeItem(`real_sms_logs_${user}`);
+        }
+      }
+
       const bData = localStorage.getItem('codeflow_broadcasts');
       if (bData && (bData.includes('BRD-1') || bData.includes('SMS Gateway System v3.4.0 Live'))) {
         localStorage.removeItem('codeflow_broadcasts');
@@ -849,35 +864,31 @@ export default function App() {
   // Synchronize state with real-time user_sms_logs database
   useEffect(() => {
     const syncWithLocalStorage = () => {
+      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+      let userNums: string[] = [];
+      if (userNumRaw) {
+        try {
+          const p = JSON.parse(userNumRaw);
+          if (Array.isArray(p)) {
+            userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+          }
+        } catch(e) {}
+      }
+
       let logs: any[] = [];
-      if (isAdminUser) {
-        const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
-        logs = existing ? JSON.parse(existing) : [];
-      } else {
-        const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
-        let userNums: string[] = [];
-        if (userNumRaw) {
+      if (userNums.length > 0) {
+        const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
+        if (userSaved) {
           try {
-            const p = JSON.parse(userNumRaw);
-            if (Array.isArray(p)) {
-              userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+            const parsed = JSON.parse(userSaved);
+            if (Array.isArray(parsed)) {
+              logs = parsed.filter((l: any) => {
+                if (!l) return false;
+                const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                return userNums.some(un => clean.includes(un) || un.includes(clean));
+              });
             }
           } catch(e) {}
-        }
-        if (userNums.length > 0) {
-          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
-          if (userSaved) {
-            try {
-              const parsed = JSON.parse(userSaved);
-              if (Array.isArray(parsed)) {
-                logs = parsed.filter((l: any) => {
-                  if (!l) return false;
-                  const clean = String(l.number || '').replace(/[^0-9]/g, '');
-                  return userNums.some(un => clean.includes(un) || un.includes(clean));
-                });
-              }
-            } catch(e) {}
-          }
         }
       }
       
@@ -928,40 +939,43 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Determine current metric data dynamically based on user's personal logs
-  const getActiveMetricData = (): MetricData => {
-    let logs: any[] = [];
-    if (isAdminUser) {
-      const existing = localStorage.getItem('user_sms_logs') || localStorage.getItem('real_sms_logs');
-      logs = existing ? JSON.parse(existing) : [];
-    } else {
-      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
-      let userNums: string[] = [];
-      if (userNumRaw) {
-        try {
-          const p = JSON.parse(userNumRaw);
-          if (Array.isArray(p)) {
-            userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
-          }
-        } catch(e) {}
-      }
-      if (userNums.length > 0) {
-        const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
-        if (userSaved) {
-          try {
-            const parsed = JSON.parse(userSaved);
-            if (Array.isArray(parsed)) {
-              logs = parsed.filter((l: any) => {
-                if (!l) return false;
-                const clean = String(l.number || '').replace(/[^0-9]/g, '');
-                return userNums.some(un => clean.includes(un) || un.includes(clean));
-              });
-            }
-          } catch(e) {}
+  // Helper to retrieve strictly user-scoped active logs based on user's rented numbers
+  const getUserActiveLogs = (): any[] => {
+    if (!currentLoggedUser) return [];
+
+    const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+    let userNums: string[] = [];
+    if (userNumRaw) {
+      try {
+        const p = JSON.parse(userNumRaw);
+        if (Array.isArray(p)) {
+          userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
         }
-      }
+      } catch (e) {}
     }
 
+    // Every user without rented numbers strictly starts at 0
+    if (userNums.length === 0) return [];
+
+    const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
+    if (userSaved) {
+      try {
+        const parsed = JSON.parse(userSaved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((l: any) => {
+            if (!l) return false;
+            const clean = String(l.number || '').replace(/[^0-9]/g, '');
+            return userNums.some(un => clean.includes(un) || un.includes(clean));
+          });
+        }
+      } catch (e) {}
+    }
+    return [];
+  };
+
+  // Determine current metric data dynamically based on user's personal logs
+  const getActiveMetricData = (): MetricData => {
+    const logs = getUserActiveLogs();
     const totalCount = logs.length;
     const deliveredCount = logs.filter((l: any) => l.status === 'DELIVERED').length;
     const failedCount = logs.filter((l: any) => l.status === 'FAILED').length;
@@ -1017,8 +1031,7 @@ export default function App() {
 
   // Chart data calculation - strictly derived from user personal logs
   const getChartData = (): DailyChartPoint[] => {
-    const existing = localStorage.getItem('user_sms_logs');
-    const logs: any[] = existing ? JSON.parse(existing) : [];
+    const logs = getUserActiveLogs();
 
     const now = new Date();
     const dates = Array.from({ length: 7 }, (_, i) => {

@@ -167,31 +167,45 @@ export const SmsRecordsView: React.FC = () => {
     };
   };
 
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+
   const loadAllRecords = async () => {
     try {
-      const res = await fetch('/api/active-sms');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
-          const parsed = data.logs as SmsLog[];
-          const customItems = parsed.map(convertCustomLog);
+      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+      let userNums: string[] = [];
+      if (userNumRaw) {
+        try {
+          const p = JSON.parse(userNumRaw);
+          if (Array.isArray(p)) {
+            userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+          }
+        } catch (e) {}
+      }
+
+      // If user has not rented numbers, always display zero records
+      if (userNums.length === 0) {
+        setRecords([]);
+        return;
+      }
+
+      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
+      if (existing) {
+        const parsed = JSON.parse(existing) as SmsLog[];
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((l: any) => {
+            if (!l) return false;
+            const clean = String(l.number || '').replace(/[^0-9]/g, '');
+            return userNums.some(un => clean.includes(un) || un.includes(clean));
+          });
+          const customItems = filtered.map(convertCustomLog);
           setRecords(customItems);
           return;
         }
       }
-    } catch (e) {}
-
-    const existing = localStorage.getItem('user_sms_logs');
-    let customItems: SmsRecordItem[] = [];
-    if (existing) {
-      try {
-        const parsed = JSON.parse(existing) as SmsLog[];
-        customItems = parsed.map(convertCustomLog);
-      } catch (e) {
-        // ignore
-      }
+      setRecords([]);
+    } catch (e) {
+      setRecords([]);
     }
-    setRecords(customItems);
   };
 
   useEffect(() => {

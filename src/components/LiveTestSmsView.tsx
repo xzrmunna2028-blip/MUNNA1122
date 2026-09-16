@@ -349,7 +349,7 @@ export const LiveTestSmsView: React.FC = () => {
   const [liveLogs, setLiveLogs] = useState<SmsLog[]>(() => {
     try {
       if (isAdmin) {
-        const saved = localStorage.getItem('real_sms_logs');
+        const saved = localStorage.getItem('live_test_sms_logs');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -613,7 +613,7 @@ export const LiveTestSmsView: React.FC = () => {
             prevFirstIdRef.current = newestId;
 
             setLiveLogs(freshLogs);
-            localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+            localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
             setIsConnected(true);
             if (smsData.last_updated) {
               setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
@@ -694,7 +694,7 @@ export const LiveTestSmsView: React.FC = () => {
                 }
                 prevFirstIdRef.current = newestId;
                 setLiveLogs(freshLogs);
-                localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+                localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
                 if (payload.last_updated) {
                   setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
                 }

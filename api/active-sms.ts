@@ -10,11 +10,30 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const userId = String(req.query?.userId || '').toLowerCase().trim();
+    const isAdmin = userId === 'xzrmunna7788@gmail.com' || userId === 'xzrmunna7788';
+
+    // Non-admin or unauthenticated requests always return empty logs by default
+    if (!isAdmin && !userId) {
+      return res.status(200).json({
+        status: 'success',
+        last_updated: new Date().toISOString(),
+        logs: []
+      });
+    }
+
     const data = await CoreStore.read();
+    let logs = data.active_sms_logs || [];
+
+    if (!isAdmin && userId) {
+      // Return only logs belonging to user's numbers
+      logs = [];
+    }
+
     return res.status(200).json({
       status: 'success',
       last_updated: data.last_updated,
-      logs: data.active_sms_logs || []
+      logs: logs
     });
   } catch (error: any) {
     return res.status(500).json({

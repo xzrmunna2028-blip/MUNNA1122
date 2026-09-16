@@ -148,12 +148,59 @@ async function startServer() {
 
   // 1. GET Endpoint to fetch aggregated sync metrics
   app.get('/api/dashboard-metrics', (req, res) => {
+    const user = ((req.query?.userId || req.query?.email || '') as string).toLowerCase().trim();
+    const isAdmin = user === 'xzrmunna7788@gmail.com' || user === 'xzrmunna7788';
+    
+    if (!isAdmin) {
+      return res.json({
+        last_updated: new Date().toISOString(),
+        metrics: {
+          messages: 0,
+          delivered: 0,
+          failed: 0,
+          todayCount: 0,
+          deliveryRate: 0.0,
+          todayDate: new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+          totalRanges: 0
+        },
+        realtime_counters: {
+          totalMessages: 0,
+          delivered: 0,
+          failed: 0,
+          charged: 0,
+          totalRanges: 0
+        },
+        chart_data: [
+          { date: 'Sep 10', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 11', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 12', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 13', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 14', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 15', total: 0, delivered: 0, failed: 0 },
+          { date: 'Sep 16', total: 0, delivered: 0, failed: 0 }
+        ],
+        active_sms_logs: [],
+        rented_numbers: []
+      });
+    }
+
     const data = readSyncData();
     res.json(data);
   });
 
   // Dedicated endpoint for Client Active SMS
   app.get('/api/active-sms', (req, res) => {
+    const user = ((req.query?.userId || req.query?.email || '') as string).toLowerCase().trim();
+    const isAdmin = user === 'xzrmunna7788@gmail.com' || user === 'xzrmunna7788';
+
+    if (!isAdmin) {
+      return res.json({
+        status: 'success',
+        last_updated: new Date().toISOString(),
+        logs: []
+      });
+    }
+
     const data = readSyncData();
     const allLogs = data.active_sms_logs || [];
     

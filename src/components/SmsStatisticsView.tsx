@@ -174,15 +174,42 @@ export const SmsStatisticsView: React.FC = () => {
   const [isApiSyncing, setIsApiSyncing] = useState(false);
   const [lastApiSync, setLastApiSync] = useState<string>('');
 
+  const currentLoggedUser = (localStorage.getItem('codeflow_user') || '').toLowerCase().trim();
+
   const fetchStatsFromApi = () => {
-    const existing = localStorage.getItem('user_sms_logs');
-    if (existing) {
-      try {
-        setRealSmsLogs(JSON.parse(existing));
-      } catch (e) {
-        setRealSmsLogs([]);
+    try {
+      const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+      let userNums: string[] = [];
+      if (userNumRaw) {
+        try {
+          const p = JSON.parse(userNumRaw);
+          if (Array.isArray(p)) {
+            userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+          }
+        } catch (e) {}
       }
-    } else {
+
+      // If user has not rented numbers, always display zero logs
+      if (userNums.length === 0) {
+        setRealSmsLogs([]);
+        return;
+      }
+
+      const existing = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((l: any) => {
+            if (!l) return false;
+            const clean = String(l.number || '').replace(/[^0-9]/g, '');
+            return userNums.some(un => clean.includes(un) || un.includes(clean));
+          });
+          setRealSmsLogs(filtered);
+          return;
+        }
+      }
+      setRealSmsLogs([]);
+    } catch (e) {
       setRealSmsLogs([]);
     }
   };
