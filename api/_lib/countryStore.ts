@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase.js';
+import { db, isFirebaseQuotaExhausted, handleFirebaseError } from './firebase.js';
 
 export interface CustomCountry {
   id: string;
@@ -37,6 +37,10 @@ export class CountryStore {
       return this.cachedCountries;
     }
 
+    if (isFirebaseQuotaExhausted()) {
+      return DEFAULT_COUNTRIES;
+    }
+
     try {
       const colRef = collection(db, 'custom_countries');
       const snap = await getDocs(colRef);
@@ -67,8 +71,8 @@ export class CountryStore {
 
       this.lastFetch = now;
       return this.cachedCountries;
-    } catch (e) {
-      console.warn('[CountryStore] Firestore read notice, using default list:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return DEFAULT_COUNTRIES;
     }
   }
@@ -90,23 +94,31 @@ export class CountryStore {
       createdAt: country.createdAt || Date.now(),
     };
 
+    if (isFirebaseQuotaExhausted()) {
+      return newCountry;
+    }
+
     try {
       await setDoc(doc(db, 'custom_countries', id), newCountry);
       this.cachedCountries = null; // Invalidate cache
-    } catch (e) {
-      console.error('[CountryStore] Error saving to Firestore:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
 
     return newCountry;
   }
 
   public static async delete(id: string): Promise<boolean> {
+    if (isFirebaseQuotaExhausted()) {
+      return true;
+    }
+
     try {
       await deleteDoc(doc(db, 'custom_countries', id));
       this.cachedCountries = null;
       return true;
-    } catch (e) {
-      console.error('[CountryStore] Error deleting country:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return false;
     }
   }

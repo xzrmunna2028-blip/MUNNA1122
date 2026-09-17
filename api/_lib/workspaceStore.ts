@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase.js';
+import { db, isFirebaseQuotaExhausted, handleFirebaseError } from './firebase.js';
 
 export interface UserWorkspace {
   email: string;
@@ -25,6 +25,17 @@ export class WorkspaceStore {
       };
     }
 
+    if (isFirebaseQuotaExhausted()) {
+      return {
+        email: cleanEmail,
+        rented_numbers: [],
+        test_numbers: [],
+        sms_logs: [],
+        notifications: [],
+        profile: null,
+      };
+    }
+
     try {
       const docRef = doc(db, 'user_workspaces', cleanEmail);
       const snap = await getDoc(docRef);
@@ -40,8 +51,8 @@ export class WorkspaceStore {
           lastUpdated: data.lastUpdated || new Date().toISOString(),
         };
       }
-    } catch (e) {
-      console.warn('[WorkspaceStore] Error reading workspace from Firestore:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
 
     return {
@@ -58,6 +69,10 @@ export class WorkspaceStore {
     const cleanEmail = String(email || '').toLowerCase().trim();
     if (!cleanEmail) return false;
 
+    if (isFirebaseQuotaExhausted()) {
+      return true;
+    }
+
     try {
       const current = await this.get(cleanEmail);
       const updated: UserWorkspace = {
@@ -73,8 +88,8 @@ export class WorkspaceStore {
       const docRef = doc(db, 'user_workspaces', cleanEmail);
       await setDoc(docRef, updated);
       return true;
-    } catch (e) {
-      console.error('[WorkspaceStore] Error saving workspace to Firestore:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return false;
     }
   }

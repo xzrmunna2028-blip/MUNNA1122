@@ -348,28 +348,11 @@ export const LiveTestSmsView: React.FC = () => {
 
   const [liveLogs, setLiveLogs] = useState<SmsLog[]>(() => {
     try {
-      if (isAdmin) {
-        const saved = localStorage.getItem('live_test_sms_logs');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            return parsed.filter((log: any) => log && typeof log === 'object');
-          }
-        }
-      } else {
-        // Regular User: strictly filter by user rented numbers
-        const userNums = getUserRentedNumbers();
-        if (userNums.length === 0) return [];
-        const saved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            return parsed.filter((log: any) => {
-              if (!log || typeof log !== 'object') return false;
-              const cleanNum = String(log.number || '').replace(/[^0-9]/g, '');
-              return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
-            });
-          }
+      const saved = localStorage.getItem('live_test_sms_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((log: any) => log && typeof log === 'object');
         }
       }
       return [];
@@ -383,9 +366,6 @@ export const LiveTestSmsView: React.FC = () => {
 
   // Dynamic real-time counters
   const [totalMessagesStat, setTotalMessagesStat] = useState<number>(() => {
-    if (!isAdmin) {
-      return liveLogs.length;
-    }
     try {
       const val = localStorage.getItem('total_messages_stat');
       return val ? parseInt(val, 10) : 0;
@@ -394,9 +374,6 @@ export const LiveTestSmsView: React.FC = () => {
     }
   });
   const [rangesStat, setRangesStat] = useState<number>(() => {
-    if (!isAdmin) {
-      return getUserRentedNumbers().length;
-    }
     try {
       const val = localStorage.getItem('ranges_stat');
       return val ? parseInt(val, 10) : 0;
@@ -509,60 +486,26 @@ export const LiveTestSmsView: React.FC = () => {
   useEffect(() => {
     const handleSmsUpdated = () => {
       try {
-        if (isAdmin) {
-          const saved = localStorage.getItem('real_sms_logs');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              const freshLogs: SmsLog[] = parsed.map((l: any) => ({
-                ...l,
-                cost: l.cost || '0.0100 USD'
-              }));
-              const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-                playSmsSound();
-              }
-              prevFirstIdRef.current = newestId;
-              setLiveLogs(freshLogs);
+        const saved = localStorage.getItem('live_test_sms_logs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const freshLogs: SmsLog[] = parsed.map((l: any) => ({
+              ...l,
+              cost: l.cost || '0.0100 USD'
+            }));
+            const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+              playSmsSound();
             }
-          }
+            prevFirstIdRef.current = newestId;
+            setLiveLogs(freshLogs);
+            setTotalMessagesStat(freshLogs.length);
 
-          const savedMessages = localStorage.getItem('total_messages_stat');
-          if (savedMessages) {
-            setTotalMessagesStat(parseInt(savedMessages, 10));
+            // Calculate unique active numbers count
+            const uniqueNums = new Set(freshLogs.map((l: any) => String(l.number || '').replace(/[^0-9]/g, ''))).size;
+            setRangesStat(uniqueNums);
           }
-          const savedRanges = localStorage.getItem('ranges_stat');
-          if (savedRanges) {
-            setRangesStat(parseInt(savedRanges, 10));
-          }
-        } else {
-          // Regular user
-          const userNums = getUserRentedNumbers();
-          const userSaved = localStorage.getItem(`real_sms_logs_${currentLoggedUser}`);
-          if (userSaved && userNums.length > 0) {
-            const parsed = JSON.parse(userSaved);
-            if (Array.isArray(parsed)) {
-              const filtered = parsed.filter(l => {
-                if (!l) return false;
-                const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
-                return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
-              }).map((l: any) => ({
-                ...l,
-                cost: l.cost || '0.0100 USD'
-              }));
-              const newestId = filtered[0]?.id || filtered[0]?.timestamp || '';
-              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-                playSmsSound();
-              }
-              prevFirstIdRef.current = newestId;
-              setLiveLogs(filtered);
-              setTotalMessagesStat(filtered.length);
-            }
-          } else {
-            setLiveLogs([]);
-            setTotalMessagesStat(0);
-          }
-          setRangesStat(userNums.length);
         }
       } catch (err) {
         console.warn('Error syncing live test SMS logs from custom event:', err);
@@ -581,81 +524,50 @@ export const LiveTestSmsView: React.FC = () => {
   const fetchLatestData = async () => {
     if (!isLiveActive) return;
     try {
-      if (isAdmin) {
-        // 1. Fetch dashboard metrics for live counters (Admin only)
-        const metricsRes = await fetch('/api/dashboard-metrics');
-        if (metricsRes.ok) {
-          const data = await metricsRes.json();
-          if (data?.metrics?.messages !== undefined) {
-            setTotalMessagesStat(data.metrics.messages);
-            localStorage.setItem('total_messages_stat', data.metrics.messages.toString());
+      // Fetch active live SMS logs (Global endpoint allowed for all users)
+      const smsRes = await fetch('/api/active-sms');
+      if (smsRes.ok) {
+        const smsData = await smsRes.json();
+        if (smsData.logs && Array.isArray(smsData.logs)) {
+          const freshLogs: SmsLog[] = smsData.logs.map((l: any) => ({
+            ...l,
+            cost: l.cost || '0.0100 USD'
+          }));
+
+          const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+          if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+            playSmsSound();
           }
-          if (data?.metrics?.totalRanges !== undefined) {
-            setRangesStat(data.metrics.totalRanges);
-            localStorage.setItem('ranges_stat', data.metrics.totalRanges.toString());
+          prevFirstIdRef.current = newestId;
+
+          setLiveLogs(freshLogs);
+          localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
+          setTotalMessagesStat(freshLogs.length);
+
+          // Calculate unique active numbers count
+          const uniqueNums = new Set(freshLogs.map((l: any) => String(l.number || '').replace(/[^0-9]/g, ''))).size;
+          setRangesStat(uniqueNums);
+
+          setIsConnected(true);
+          if (smsData.last_updated) {
+            setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
           }
-        }
 
-        // 2. Fetch active live SMS logs (Admin only)
-        const smsRes = await fetch('/api/active-sms');
-        if (smsRes.ok) {
-          const smsData = await smsRes.json();
-          if (smsData.logs && Array.isArray(smsData.logs)) {
-            const freshLogs: SmsLog[] = smsData.logs.map((l: any) => ({
-              ...l,
-              cost: l.cost || '0.0100 USD'
-            }));
-
-            const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-              playSmsSound();
-            }
-            prevFirstIdRef.current = newestId;
-
-            setLiveLogs(freshLogs);
-            localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
-            setIsConnected(true);
-            if (smsData.last_updated) {
-              setLastSyncTime(new Date(smsData.last_updated).toLocaleTimeString('en-US', { hour12: false }));
-            }
-          }
-        }
-      } else {
-        // Non-admin user: inspect stream for user's own rented numbers
-        const userNums = getUserRentedNumbers();
-        setRangesStat(userNums.length);
-
-        if (userNums.length === 0) {
-          setLiveLogs([]);
-          setTotalMessagesStat(0);
-          return;
-        }
-
-        const smsRes = await fetch('/api/active-sms');
-        if (smsRes.ok) {
-          const smsData = await smsRes.json();
-          if (smsData.logs && Array.isArray(smsData.logs)) {
-            const matchedLogs: SmsLog[] = smsData.logs
-              .filter((l: any) => {
-                if (!l) return false;
-                const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
-                return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
-              })
-              .map((l: any) => ({
-                ...l,
-                cost: l.cost || '0.0100 USD'
-              }));
-
-            const newestId = matchedLogs[0]?.id || matchedLogs[0]?.timestamp || '';
-            if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-              playSmsSound();
-            }
-            prevFirstIdRef.current = newestId;
-
-            setLiveLogs(matchedLogs);
-            setTotalMessagesStat(matchedLogs.length);
+          // Background task: strictly extract user's own matched logs & save to workspace
+          if (!isAdmin && currentLoggedUser) {
+            const userNums = getUserRentedNumbers();
+            const matchedLogs = freshLogs.filter((l: any) => {
+              if (!l) return false;
+              const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+              return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+            });
             localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(matchedLogs));
-            setIsConnected(true);
+            // Dispatch event to sync other tabs
+            window.dispatchEvent(new Event('real_sms_updated'));
+            window.dispatchEvent(new Event('user_sms_updated'));
+          } else if (isAdmin) {
+            localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+            window.dispatchEvent(new Event('real_sms_updated'));
           }
         }
       }
@@ -676,64 +588,43 @@ export const LiveTestSmsView: React.FC = () => {
         try {
           const payload = JSON.parse(event.data);
           if (payload) {
-            if (isAdmin) {
-              if (payload.metrics?.messages !== undefined) {
-                setTotalMessagesStat(payload.metrics.messages);
+            if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
+              const freshLogs: SmsLog[] = payload.active_sms_logs.map((l: any) => ({
+                ...l,
+                cost: l.cost || '0.0100 USD'
+              }));
+              const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
+              if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
+                playSmsSound();
               }
-              if (payload.metrics?.totalRanges !== undefined) {
-                setRangesStat(payload.metrics.totalRanges);
-              }
-              if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
-                const freshLogs: SmsLog[] = payload.active_sms_logs.map((l: any) => ({
-                  ...l,
-                  cost: l.cost || '0.0100 USD'
-                }));
-                const newestId = freshLogs[0]?.id || freshLogs[0]?.timestamp || '';
-                if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-                  playSmsSound();
-                }
-                prevFirstIdRef.current = newestId;
-                setLiveLogs(freshLogs);
-                localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
-                if (payload.last_updated) {
-                  setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
-                }
-              }
-            } else {
-              // Regular user in SSE
-              const userNums = getUserRentedNumbers();
-              setRangesStat(userNums.length);
+              prevFirstIdRef.current = newestId;
+              setLiveLogs(freshLogs);
+              localStorage.setItem('live_test_sms_logs', JSON.stringify(freshLogs));
+              setTotalMessagesStat(freshLogs.length);
 
-              if (userNums.length === 0) {
-                setLiveLogs([]);
-                setTotalMessagesStat(0);
-                return;
+              // Calculate unique active numbers count
+              const uniqueNums = new Set(freshLogs.map((l: any) => String(l.number || '').replace(/[^0-9]/g, ''))).size;
+              setRangesStat(uniqueNums);
+
+              if (payload.last_updated) {
+                setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
               }
 
-              if (payload.active_sms_logs && Array.isArray(payload.active_sms_logs)) {
-                const matchedLogs: SmsLog[] = payload.active_sms_logs
-                  .filter((l: any) => {
-                    if (!l) return false;
-                    const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
-                    return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
-                  })
-                  .map((l: any) => ({
-                    ...l,
-                    cost: l.cost || '0.0100 USD'
-                  }));
-
-                const newestId = matchedLogs[0]?.id || matchedLogs[0]?.timestamp || '';
-                if (prevFirstIdRef.current && newestId !== prevFirstIdRef.current) {
-                  playSmsSound();
-                }
-                prevFirstIdRef.current = newestId;
-
-                setLiveLogs(matchedLogs);
-                setTotalMessagesStat(matchedLogs.length);
+              // Background task: strictly extract user's own matched logs & save to workspace
+              if (!isAdmin && currentLoggedUser) {
+                const userNums = getUserRentedNumbers();
+                const matchedLogs = freshLogs.filter((l: any) => {
+                  if (!l) return false;
+                  const cleanNum = String(l.number || '').replace(/[^0-9]/g, '');
+                  return userNums.some(un => cleanNum.includes(un) || un.includes(cleanNum));
+                });
                 localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(matchedLogs));
-                if (payload.last_updated) {
-                  setLastSyncTime(new Date(payload.last_updated).toLocaleTimeString('en-US', { hour12: false }));
-                }
+                // Dispatch event to sync other tabs
+                window.dispatchEvent(new Event('real_sms_updated'));
+                window.dispatchEvent(new Event('user_sms_updated'));
+              } else if (isAdmin) {
+                localStorage.setItem('real_sms_logs', JSON.stringify(freshLogs));
+                window.dispatchEvent(new Event('real_sms_updated'));
               }
             }
           }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase.js';
+import { db, isFirebaseQuotaExhausted, handleFirebaseError } from './firebase.js';
 
 /**
  * Standardized Database Schema & Interfaces for Enterprise SMS Gateway
@@ -79,22 +79,10 @@ export class CoreStore {
   private static cache: SyncData | null = null;
   private static lastReadTime = 0;
   private static cacheTTL = 1000; // 1-second hot read cache TTL to handle extreme request spikes
-  private static writeQueue: Promise<boolean> = Promise.resolve(true); // Sequential queue to prevent race conditions on writes
+  private static isWriting = false;
+  private static hasPendingWrite = false;
+  private static pendingData: SyncData | null = null;
   private static jsonBackupPath = path.join(process.cwd(), 'iprn_sync.json');
-  private static quotaFilePath = path.join(process.cwd(), '.firestore_quota');
-  private static quotaExhaustedUntil: number = (() => {
-    try {
-      const qPath = path.join(process.cwd(), '.firestore_quota');
-      if (fs.existsSync(qPath)) {
-        const val = parseInt(fs.readFileSync(qPath, 'utf8').trim(), 10);
-        if (!isNaN(val) && val > Date.now()) {
-          return val;
-        }
-      }
-    } catch {}
-    // Default to 0 (normal Firestore connectivity)
-    return 0;
-  })(); // Timestamp until which Firestore writes should be bypassed
 
   private static saveLocalBackup(data: SyncData): void {
     try {
@@ -125,7 +113,7 @@ export class CoreStore {
     }
 
     // If quota is exhausted, read from local backup JSON file
-    if (now < this.quotaExhaustedUntil) {
+    if (isFirebaseQuotaExhausted()) {
       const backup = this.readLocalBackup();
       if (backup) {
         this.cache = backup;
@@ -169,13 +157,7 @@ export class CoreStore {
       this.saveLocalBackup(mergedData);
       return JSON.parse(JSON.stringify(mergedData));
     } catch (error: any) {
-      const errMsg = String(error?.message || error?.code || '');
-      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('resource-exhausted') || errMsg.includes('Quota') || error?.code === 8 || error?.code === 'resource-exhausted') {
-        this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1000;
-        try {
-          fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), 'utf8');
-        } catch {}
-      }
+      handleFirebaseError(error);
 
       const backup = this.readLocalBackup();
       if (backup) {
@@ -214,49 +196,64 @@ export class CoreStore {
     this.saveLocalBackup(data);
 
     // If Firestore write quota is exhausted for the project, skip gRPC write to prevent stream errors
-    if (Date.now() < this.quotaExhaustedUntil) {
+    if (isFirebaseQuotaExhausted()) {
       return true;
     }
 
-    this.writeQueue = this.writeQueue.then(async () => {
-      try {
-        if (Date.now() < this.quotaExhaustedUntil) {
-          return true;
-        }
+    // If a write is currently in progress, register this as a single pending write (will run once the active write completes)
+    if (this.isWriting) {
+      this.pendingData = JSON.parse(JSON.stringify(data));
+      this.hasPendingWrite = true;
+      return true;
+    }
 
-        data.last_updated = new Date().toISOString();
+    this.isWriting = true;
 
-        // Write atomic settings/global document (1 single efficient write unit)
-        const settingsRef = doc(db, 'settings', 'global');
-        await setDoc(settingsRef, {
-          last_updated: data.last_updated,
-          iprn_api_key: data.iprn_api_key || '',
-          metrics: data.metrics,
-          realtime_counters: data.realtime_counters,
-          chart_data: data.chart_data || [],
-          active_sms_logs: (data.active_sms_logs || []).slice(0, 100),
-          rented_numbers: (data.rented_numbers || []).slice(0, 100),
-          activity_logs: (data.activity_logs || []).slice(0, 50)
-        });
-
+    try {
+      if (isFirebaseQuotaExhausted()) {
+        this.isWriting = false;
         return true;
-      } catch (error: any) {
-        const errMsg = String(error?.message || error?.code || '');
-        if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('resource-exhausted') || errMsg.includes('Quota') || error?.code === 8 || error?.code === 'resource-exhausted') {
-          // Back off Firestore writes for 24 hours so gRPC write streams are completely muted
-          this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1000;
-          try {
-            fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), 'utf8');
-          } catch {}
-          console.warn('[CoreStore] Firestore daily write quota limit reached. Safely persisting via local high-speed memory & JSON engine.');
-        } else {
-          console.warn('[CoreStore] Firestore sync notice:', error?.message || error);
-        }
-        return false;
       }
-    });
 
-    return this.writeQueue;
+      data.last_updated = new Date().toISOString();
+
+      // Write atomic settings/global document (1 single efficient write unit)
+      const settingsRef = doc(db, 'settings', 'global');
+      await setDoc(settingsRef, {
+        last_updated: data.last_updated,
+        iprn_api_key: data.iprn_api_key || '',
+        metrics: data.metrics,
+        realtime_counters: data.realtime_counters,
+        chart_data: data.chart_data || [],
+        active_sms_logs: (data.active_sms_logs || []).slice(0, 100),
+        rented_numbers: (data.rented_numbers || []).slice(0, 100),
+        activity_logs: (data.activity_logs || []).slice(0, 50)
+      });
+
+      this.isWriting = false;
+
+      // Execute single queued follow-up write if another update request arrived during the operation
+      if (this.hasPendingWrite && this.pendingData) {
+        const nextData = this.pendingData;
+        this.hasPendingWrite = false;
+        this.pendingData = null;
+        // Run next write asynchronously
+        setTimeout(() => {
+          this.write(nextData).catch(() => {});
+        }, 50);
+      }
+
+      return true;
+    } catch (error: any) {
+      this.isWriting = false;
+      handleFirebaseError(error);
+
+      // Clear pending queue on failure to prevent any repeating loops
+      this.hasPendingWrite = false;
+      this.pendingData = null;
+
+      return false;
+    }
   }
 
   /**
@@ -489,50 +486,58 @@ export class CustomTermStore {
     term: Omit<CustomTermination, 'available' | 'label'>,
     numbersPool: string[]
   ): Promise<boolean> {
-    const { code } = term;
-    const totalNumbers = numbersPool.length;
-
-    // 1. Save metadata to main document
-    const termRef = doc(db, 'custom_terminations', code);
-    await setDoc(termRef, {
-      code,
-      country: term.country,
-      operator: term.operator,
-      service: term.service,
-      rangeName: term.rangeName,
-      rate: term.rate,
-      limit: term.limit,
-      number: term.number,
-      totalNumbers,
-      createdAt: term.createdAt || Date.now()
-    });
-
-    // 2. Chunk numbersPool into max 10,000 per document to stay safely below 1MB limit
-    const CHUNK_SIZE = 10000;
-    const chunks: string[][] = [];
-    for (let i = 0; i < numbersPool.length; i += CHUNK_SIZE) {
-      chunks.push(numbersPool.slice(i, i + CHUNK_SIZE));
+    if (isFirebaseQuotaExhausted()) {
+      return true;
     }
 
-    // 3. Save each chunk to subcollection pool_chunks
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
-      await setDoc(chunkRef, { numbers: chunks[i] });
-    }
+    try {
+      const { code } = term;
+      const totalNumbers = numbersPool.length;
 
-    // 4. Delete any leftover previous chunks from disk or Firestore if the pool size has decreased
-    // (e.g. if previous had 15 chunks and now it has 5, delete chunks 5 to 14)
-    const startIdx = chunks.length;
-    for (let i = startIdx; i < startIdx + 100; i++) {
-      try {
-        const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
-        await deleteDoc(chunkRef);
-      } catch (e) {
-        break; // Stop if we hit an error or no more chunks
+      // 1. Save metadata to main document
+      const termRef = doc(db, 'custom_terminations', code);
+      await setDoc(termRef, {
+        code,
+        country: term.country,
+        operator: term.operator,
+        service: term.service,
+        rangeName: term.rangeName,
+        rate: term.rate,
+        limit: term.limit,
+        number: term.number,
+        totalNumbers,
+        createdAt: term.createdAt || Date.now()
+      });
+
+      // 2. Chunk numbersPool into max 10,000 per document to stay safely below 1MB limit
+      const CHUNK_SIZE = 10000;
+      const chunks: string[][] = [];
+      for (let i = 0; i < numbersPool.length; i += CHUNK_SIZE) {
+        chunks.push(numbersPool.slice(i, i + CHUNK_SIZE));
       }
-    }
 
-    return true;
+      // 3. Save each chunk to subcollection pool_chunks
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
+        await setDoc(chunkRef, { numbers: chunks[i] });
+      }
+
+      // 4. Delete any leftover previous chunks from disk or Firestore if the pool size has decreased
+      const startIdx = chunks.length;
+      for (let i = startIdx; i < startIdx + 100; i++) {
+        try {
+          const chunkRef = doc(db, 'custom_terminations', code, 'pool_chunks', `chunk_${i}`);
+          await deleteDoc(chunkRef);
+        } catch (e) {
+          break; // Stop if we hit an error or no more chunks
+        }
+      }
+
+      return true;
+    } catch (e: any) {
+      handleFirebaseError(e);
+      return false;
+    }
   }
 
   /**
@@ -542,26 +547,35 @@ export class CustomTermStore {
     code: string,
     updates: Partial<Omit<CustomTermination, 'code'>>
   ): Promise<any> {
-    const termRef = doc(db, 'custom_terminations', code);
-    const snap = await getDoc(termRef);
-    if (!snap.exists()) {
-      throw new Error('Termination range not found');
+    if (isFirebaseQuotaExhausted()) {
+      return updates;
     }
 
-    const current = snap.data();
-    const updated = {
-      ...current,
-      country: updates.country || current.country,
-      operator: updates.operator || current.operator,
-      service: updates.service || current.service,
-      rangeName: updates.rangeName || current.rangeName,
-      rate: updates.rate !== undefined ? updates.rate : current.rate,
-      limit: updates.limit || current.limit,
-      number: updates.number !== undefined ? updates.number : current.number,
-    };
+    try {
+      const termRef = doc(db, 'custom_terminations', code);
+      const snap = await getDoc(termRef);
+      if (!snap.exists()) {
+        throw new Error('Termination range not found');
+      }
 
-    await setDoc(termRef, updated);
-    return updated;
+      const current = snap.data();
+      const updated = {
+        ...current,
+        country: updates.country || current.country,
+        operator: updates.operator || current.operator,
+        service: updates.service || current.service,
+        rangeName: updates.rangeName || current.rangeName,
+        rate: updates.rate !== undefined ? updates.rate : current.rate,
+        limit: updates.limit || current.limit,
+        number: updates.number !== undefined ? updates.number : current.number,
+      };
+
+      await setDoc(termRef, updated);
+      return updated;
+    } catch (e: any) {
+      handleFirebaseError(e);
+      return updates;
+    }
   }
 
   /**

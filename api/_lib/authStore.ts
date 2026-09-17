@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase.js';
+import { db, isFirebaseQuotaExhausted, handleFirebaseError } from './firebase.js';
 
 export interface UserRecord {
   id?: string;
@@ -42,6 +42,9 @@ export class AuthStore {
   // USERS
   public static async getUsers(): Promise<UserRecord[]> {
     try {
+      if (isFirebaseQuotaExhausted()) {
+        return [];
+      }
       const colRef = collection(db, 'registered_users');
       const snap = await getDocs(colRef);
       const list: UserRecord[] = [];
@@ -86,13 +89,16 @@ export class AuthStore {
         return defaultUsers;
       }
       return list;
-    } catch (e) {
-      console.error('[AuthStore] getUsers error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return [];
     }
   }
 
   public static async saveUser(user: UserRecord): Promise<void> {
+    if (isFirebaseQuotaExhausted()) {
+      return;
+    }
     try {
       const cleanEmail = user.email.toLowerCase().trim();
       const userRef = doc(db, 'registered_users', cleanEmail);
@@ -100,26 +106,29 @@ export class AuthStore {
         ...user,
         email: cleanEmail
       }, { merge: true });
-    } catch (e) {
-      console.error('[AuthStore] saveUser error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
   public static async saveUsers(users: UserRecord[]): Promise<void> {
     try {
       await Promise.all(users.map(u => this.saveUser(u)));
-    } catch (e) {
-      console.error('[AuthStore] saveUsers error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
   public static async deleteUser(email: string): Promise<void> {
+    if (isFirebaseQuotaExhausted()) {
+      return;
+    }
     try {
       const cleanEmail = email.toLowerCase().trim();
       const userRef = doc(db, 'registered_users', cleanEmail);
       await deleteDoc(userRef);
-    } catch (e) {
-      console.error('[AuthStore] deleteUser error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
@@ -131,6 +140,9 @@ export class AuthStore {
   // INVITATIONS
   public static async getInvitations(): Promise<InvitationRecord[]> {
     try {
+      if (isFirebaseQuotaExhausted()) {
+        return [];
+      }
       const colRef = collection(db, 'invitations');
       const snap = await getDocs(colRef);
       const list: InvitationRecord[] = [];
@@ -138,33 +150,39 @@ export class AuthStore {
         list.push(doc.data() as InvitationRecord);
       });
       return list.sort((a, b) => b.createdAt - a.createdAt);
-    } catch (e) {
-      console.error('[AuthStore] getInvitations error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return [];
     }
   }
 
   public static async saveInvitation(inv: InvitationRecord): Promise<void> {
+    if (isFirebaseQuotaExhausted()) {
+      return;
+    }
     try {
       const token = inv.token.trim();
       const ref = doc(db, 'invitations', token);
       await setDoc(ref, inv, { merge: true });
-    } catch (e) {
-      console.error('[AuthStore] saveInvitation error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
   public static async saveInvitations(invites: InvitationRecord[]): Promise<void> {
     try {
       await Promise.all(invites.map(i => this.saveInvitation(i)));
-    } catch (e) {
-      console.error('[AuthStore] saveInvitations error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
   // BROADCASTS
   public static async getBroadcasts(): Promise<BroadcastRecord[]> {
     try {
+      if (isFirebaseQuotaExhausted()) {
+        return [];
+      }
       const colRef = collection(db, 'broadcast_notices');
       const snap = await getDocs(colRef);
       const list: BroadcastRecord[] = [];
@@ -187,27 +205,33 @@ export class AuthStore {
         return [defaultNotice];
       }
       return list;
-    } catch (e) {
-      console.error('[AuthStore] getBroadcasts error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
       return [];
     }
   }
 
   public static async saveBroadcast(b: BroadcastRecord): Promise<void> {
+    if (isFirebaseQuotaExhausted()) {
+      return;
+    }
     try {
       const ref = doc(db, 'broadcast_notices', b.id);
       await setDoc(ref, b, { merge: true });
-    } catch (e) {
-      console.error('[AuthStore] saveBroadcast error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 
   public static async deleteBroadcast(id: string): Promise<void> {
+    if (isFirebaseQuotaExhausted()) {
+      return;
+    }
     try {
       const ref = doc(db, 'broadcast_notices', id);
       await deleteDoc(ref);
-    } catch (e) {
-      console.error('[AuthStore] deleteBroadcast error:', e);
+    } catch (e: any) {
+      handleFirebaseError(e);
     }
   }
 }

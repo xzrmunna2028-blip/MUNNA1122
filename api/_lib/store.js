@@ -6,9 +6,9 @@ class CoreStore {
   static cache = null;
   static lastReadTime = 0;
   static cacheTTL = 1e3;
-  // 1-second hot read cache TTL to handle extreme request spikes
-  static writeQueue = Promise.resolve(true);
-  // Sequential queue to prevent race conditions on writes
+  static isWriting = false;
+  static hasPendingWrite = false;
+  static pendingData = null;
   static jsonBackupPath = path.join(process.cwd(), "iprn_sync.json");
   static quotaFilePath = path.join(process.cwd(), ".firestore_quota");
   static quotaExhaustedUntil = (() => {
@@ -22,7 +22,7 @@ class CoreStore {
       }
     } catch {
     }
-    return Date.now() + 24 * 60 * 60 * 1e3;
+    return 0;
   })();
   // Timestamp until which Firestore writes should be bypassed
   static saveLocalBackup(data) {
@@ -127,40 +127,56 @@ class CoreStore {
     if (Date.now() < this.quotaExhaustedUntil) {
       return true;
     }
-    this.writeQueue = this.writeQueue.then(async () => {
-      try {
-        if (Date.now() < this.quotaExhaustedUntil) {
-          return true;
-        }
-        data.last_updated = (/* @__PURE__ */ new Date()).toISOString();
-        const settingsRef = doc(db, "settings", "global");
-        await setDoc(settingsRef, {
-          last_updated: data.last_updated,
-          iprn_api_key: data.iprn_api_key || "",
-          metrics: data.metrics,
-          realtime_counters: data.realtime_counters,
-          chart_data: data.chart_data || [],
-          active_sms_logs: (data.active_sms_logs || []).slice(0, 100),
-          rented_numbers: (data.rented_numbers || []).slice(0, 100),
-          activity_logs: (data.activity_logs || []).slice(0, 50)
-        });
+    if (this.isWriting) {
+      this.pendingData = JSON.parse(JSON.stringify(data));
+      this.hasPendingWrite = true;
+      return true;
+    }
+    this.isWriting = true;
+    try {
+      if (Date.now() < this.quotaExhaustedUntil) {
+        this.isWriting = false;
         return true;
-      } catch (error) {
-        const errMsg = String(error?.message || error?.code || "");
-        if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("resource-exhausted") || errMsg.includes("Quota") || error?.code === 8 || error?.code === "resource-exhausted") {
-          this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1e3;
-          try {
-            fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), "utf8");
-          } catch {
-          }
-          console.warn("[CoreStore] Firestore daily write quota limit reached. Safely persisting via local high-speed memory & JSON engine.");
-        } else {
-          console.warn("[CoreStore] Firestore sync notice:", error?.message || error);
-        }
-        return false;
       }
-    });
-    return this.writeQueue;
+      data.last_updated = (/* @__PURE__ */ new Date()).toISOString();
+      const settingsRef = doc(db, "settings", "global");
+      await setDoc(settingsRef, {
+        last_updated: data.last_updated,
+        iprn_api_key: data.iprn_api_key || "",
+        metrics: data.metrics,
+        realtime_counters: data.realtime_counters,
+        chart_data: data.chart_data || [],
+        active_sms_logs: (data.active_sms_logs || []).slice(0, 100),
+        rented_numbers: (data.rented_numbers || []).slice(0, 100),
+        activity_logs: (data.activity_logs || []).slice(0, 50)
+      });
+      this.isWriting = false;
+      if (this.hasPendingWrite && this.pendingData) {
+        const nextData = this.pendingData;
+        this.hasPendingWrite = false;
+        this.pendingData = null;
+        setTimeout(() => {
+          this.write(nextData).catch(() => {});
+        }, 50);
+      }
+      return true;
+    } catch (error) {
+      this.isWriting = false;
+      const errMsg = String(error?.message || error?.code || "");
+      if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("resource-exhausted") || errMsg.includes("Quota") || error?.code === 8 || error?.code === "resource-exhausted") {
+        this.quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1e3;
+        try {
+          fs.writeFileSync(this.quotaFilePath, this.quotaExhaustedUntil.toString(), "utf8");
+        } catch {
+        }
+        console.warn("[CoreStore] Firestore daily write quota limit reached. Safely persisting via local high-speed memory & JSON engine.");
+      } else {
+        console.warn("[CoreStore] Firestore sync notice:", error?.message || error);
+      }
+      this.hasPendingWrite = false;
+      this.pendingData = null;
+      return false;
+    }
   }
   /**
    * Processes an incoming message webhook or sync payload with defensive validation and safe sanitization

@@ -48,3 +48,39 @@ if (!firebaseConfig) {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+const quotaFilePath = path.join(process.cwd(), '.firestore_quota');
+let quotaExhaustedUntil = 0;
+try {
+  if (fs.existsSync(quotaFilePath)) {
+    const val = parseInt(fs.readFileSync(quotaFilePath, 'utf8').trim(), 10);
+    if (!isNaN(val) && val > Date.now()) {
+      quotaExhaustedUntil = val;
+    }
+  }
+} catch {}
+
+export function isFirebaseQuotaExhausted(): boolean {
+  return Date.now() < quotaExhaustedUntil;
+}
+
+export function markFirebaseQuotaExhausted(): void {
+  quotaExhaustedUntil = Date.now() + 24 * 60 * 60 * 1000;
+  try {
+    fs.writeFileSync(quotaFilePath, quotaExhaustedUntil.toString(), 'utf8');
+  } catch {}
+}
+
+export function handleFirebaseError(error: any): void {
+  const errMsg = String(error?.message || error?.code || '');
+  if (
+    errMsg.includes('RESOURCE_EXHAUSTED') ||
+    errMsg.includes('resource-exhausted') ||
+    errMsg.includes('Quota') ||
+    error?.code === 8 ||
+    error?.code === 'resource-exhausted'
+  ) {
+    markFirebaseQuotaExhausted();
+    console.warn('[Firebase] Firestore daily write quota limit reached. Safely persisting via local memory & JSON engine.');
+  }
+}
