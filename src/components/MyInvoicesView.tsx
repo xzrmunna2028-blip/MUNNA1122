@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getRealSmsLogs } from '../utils/realtimeSmsService.js';
 import {
   FileText,
   Clock,
@@ -156,9 +157,8 @@ export const MyInvoicesView: React.FC<MyInvoicesViewProps> = ({ onNavigateToPaym
         setHasPaymentMethod(true);
       }
 
-      // Calculate delivered OTPs from real_sms_logs + bonus OTP count
-      const existingLogs = localStorage.getItem('real_sms_logs');
-      const logs = existingLogs ? JSON.parse(existingLogs) : [];
+      // Calculate delivered OTPs from user-scoped real_sms_logs + bonus OTP count
+      const logs = getRealSmsLogs();
       const deliveredCount = logs.filter((l: any) => l.status === 'DELIVERED').length;
       const bonusOtp = parseInt(localStorage.getItem('user_bonus_otp_count') || '0', 10);
       setOtpCount(deliveredCount + bonusOtp);

@@ -2609,17 +2609,29 @@ export const seedInitialOtpLogs = () => {
   initRealtimeSmsStore();
 };
 
-// Ensure default rented numbers exist
+// Ensure default rented numbers exist (strictly scoped by user role)
 export const ensureDefaultRentedNumbers = (): RentedNumber[] => {
-  const local = localStorage.getItem('rented_numbers');
-  if (local !== null) {
-    try {
-      const parsed: RentedNumber[] = JSON.parse(local);
-      if (Array.isArray(parsed)) {
-        // Filter out any default demo numbers to keep it clean
-        return parsed.filter(n => n && n.number !== '+994997780131' && n.number !== '+855313910487' && !String(n.id).startsWith('NUM-IPRN-'));
-      }
-    } catch (e) {}
+  const user = (typeof window !== 'undefined' ? localStorage.getItem('codeflow_user') || '' : '').toLowerCase().trim();
+  const isAdmin = user === 'xzrmunna7788@gmail.com' || user === 'xzrmunna7788';
+  
+  if (isAdmin) {
+    const local = localStorage.getItem('rented_numbers');
+    if (local !== null) {
+      try {
+        const parsed: RentedNumber[] = JSON.parse(local);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  } else if (user) {
+    const userNumRaw = localStorage.getItem(`rented_numbers_${user}`);
+    if (userNumRaw !== null) {
+      try {
+        const parsed: RentedNumber[] = JSON.parse(userNumRaw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
   }
   return [];
 };
@@ -2650,13 +2662,28 @@ export const getUserSmsLogs = (): RealSmsLog[] => {
   return [];
 };
 
-// Get all real SMS logs
+// Get real SMS logs strictly scoped by logged-in user role
 export const getRealSmsLogs = (): RealSmsLog[] => {
-  const existing = localStorage.getItem('real_sms_logs');
-  if (existing) {
-    try {
-      return JSON.parse(existing);
-    } catch (e) {}
+  const user = (typeof window !== 'undefined' ? localStorage.getItem('codeflow_user') || '' : '').toLowerCase().trim();
+  const isAdmin = user === 'xzrmunna7788@gmail.com' || user === 'xzrmunna7788';
+  
+  if (isAdmin) {
+    const existing = localStorage.getItem('real_sms_logs');
+    if (existing) {
+      try {
+        return JSON.parse(existing);
+      } catch (e) {}
+    }
+    return [];
+  } else if (user) {
+    const userSaved = localStorage.getItem(`real_sms_logs_${user}`);
+    if (userSaved) {
+      try {
+        const parsed = JSON.parse(userSaved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
   }
   return [];
 };

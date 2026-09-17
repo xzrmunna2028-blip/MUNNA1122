@@ -13,40 +13,71 @@ export default async function handler(req: any, res: any) {
     const userId = String(req.query?.userId || '').toLowerCase().trim();
     const isAdmin = userId === 'xzrmunna7788@gmail.com' || userId === 'xzrmunna7788';
 
+    const data = await CoreStore.read();
+
     if (!isAdmin) {
+      // Find rented numbers assigned to this user
+      const userNumbers = (data.rented_numbers || []).filter((n: any) => {
+        const owner = (n.userId || n.user || n.email || '').toLowerCase().trim();
+        return owner === userId;
+      });
+      const userNumsSet = new Set<string>(userNumbers.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')));
+
+      // Filter active SMS logs matching user numbers
+      const userActiveLogs = (data.active_sms_logs || []).filter((log: any) => {
+        if (!log) return false;
+        const clean = String(log.number || '').replace(/[^0-9]/g, '');
+        return Array.from(userNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
+      });
+
+      const totalMessages = userActiveLogs.length;
+      const delivered = userActiveLogs.filter((l: any) => l.status === 'DELIVERED').length;
+      const failed = userActiveLogs.filter((l: any) => l.status === 'FAILED').length;
+      const rate = totalMessages > 0 ? parseFloat(((delivered / totalMessages) * 100).toFixed(1)) : 0;
+
+      const now = new Date();
+      const todayPrefix = now.toISOString().split('T')[0];
+      const todayCount = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length;
+
+      const chart_data = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - (6 - i));
+        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const isoPrefix = d.toISOString().split('T')[0];
+
+        const dayLogs = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(isoPrefix));
+        return {
+          date: dateStr,
+          total: dayLogs.length,
+          delivered: dayLogs.filter((l: any) => l.status === 'DELIVERED').length,
+          failed: dayLogs.filter((l: any) => l.status === 'FAILED').length
+        };
+      });
+
       return res.status(200).json({
-        last_updated: new Date().toISOString(),
+        last_updated: data.last_updated || new Date().toISOString(),
         metrics: {
-          messages: 0,
-          delivered: 0,
-          failed: 0,
-          todayCount: 0,
-          deliveryRate: 0.0,
+          messages: totalMessages,
+          delivered: delivered,
+          failed: failed,
+          todayCount: todayCount,
+          deliveryRate: rate,
           todayDate: new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-          totalRanges: 0
+          totalRanges: userNumbers.length
         },
         realtime_counters: {
-          totalMessages: 0,
-          delivered: 0,
-          failed: 0,
-          charged: 0,
-          totalRanges: 0
+          totalMessages: totalMessages,
+          delivered: delivered,
+          failed: failed,
+          charged: delivered,
+          totalRanges: userNumbers.length
         },
-        chart_data: [
-          { date: 'Sep 10', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 11', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 12', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 13', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 14', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 15', total: 0, delivered: 0, failed: 0 },
-          { date: 'Sep 16', total: 0, delivered: 0, failed: 0 }
-        ],
-        active_sms_logs: [],
-        rented_numbers: []
+        chart_data: chart_data,
+        active_sms_logs: userActiveLogs,
+        rented_numbers: userNumbers
       });
     }
 
-    const data = await CoreStore.read();
     return res.status(200).json(data);
   } catch (error: any) {
     console.error('[Vercel-Metrics] Failed to fetch dashboard metrics:', error);

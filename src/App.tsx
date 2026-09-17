@@ -286,8 +286,8 @@ export default function App() {
             localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
             window.dispatchEvent(new Event('rented_numbers_updated'));
           }
-        } else {
-          // Regular user: do not overwrite local workspace with global logs
+        } else if (currentLoggedUser) {
+          // Regular user: strictly isolate logs and force 0 if no matching rented numbers/messages
           const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
           let userNums: string[] = [];
           if (userNumRaw) {
@@ -298,18 +298,17 @@ export default function App() {
               }
             } catch(e) {}
           }
+          let userMatched: any[] = [];
           if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
-            const userMatched = json.active_sms_logs.filter((l: any) => {
+            userMatched = json.active_sms_logs.filter((l: any) => {
               if (!l) return false;
               const clean = String(l.number || '').replace(/[^0-9]/g, '');
               return userNums.some(un => clean.includes(un) || un.includes(clean));
             });
-            if (userMatched.length > 0) {
-              localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
-              window.dispatchEvent(new Event('real_sms_updated'));
-              window.dispatchEvent(new Event('user_sms_updated'));
-            }
           }
+          localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+          window.dispatchEvent(new Event('real_sms_updated'));
+          window.dispatchEvent(new Event('user_sms_updated'));
         }
       }
     } catch (err: any) {
@@ -412,8 +411,8 @@ export default function App() {
                   localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
                   window.dispatchEvent(new Event('rented_numbers_updated'));
                 }
-              } else {
-                // Regular user: do not overwrite local workspace with global logs
+              } else if (currentLoggedUser) {
+                // Regular user: strictly isolate logs and force 0 if no matching rented numbers/messages
                 const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
                 let userNums: string[] = [];
                 if (userNumRaw) {
@@ -424,18 +423,17 @@ export default function App() {
                     }
                   } catch(e) {}
                 }
+                let userMatched: any[] = [];
                 if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
-                  const userMatched = json.active_sms_logs.filter((l: any) => {
+                  userMatched = json.active_sms_logs.filter((l: any) => {
                     if (!l) return false;
                     const clean = String(l.number || '').replace(/[^0-9]/g, '');
                     return userNums.some(un => clean.includes(un) || un.includes(clean));
                   });
-                  if (userMatched.length > 0) {
-                    localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
-                    window.dispatchEvent(new Event('real_sms_updated'));
-                    window.dispatchEvent(new Event('user_sms_updated'));
-                  }
                 }
+                localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+                window.dispatchEvent(new Event('real_sms_updated'));
+                window.dispatchEvent(new Event('user_sms_updated'));
               }
             }
           }
