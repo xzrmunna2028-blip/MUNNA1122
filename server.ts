@@ -154,73 +154,69 @@ async function startServer() {
     
     const data = readSyncData();
 
-    if (!isAdmin) {
-      // Filter rented numbers belonging to this user
-      const userNumbers = (data.rented_numbers || []).filter((n: any) => {
-        const owner = (n.userId || n.user || n.email || '').toLowerCase().trim();
-        return owner === user;
-      });
-      const userNumsSet = new Set<string>(userNumbers.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')));
+    // Determine assigned numbers for this user/admin
+    const userNumbers = isAdmin
+      ? (data.rented_numbers || [])
+      : (data.rented_numbers || []).filter((n: any) => {
+          const owner = (n.userId || n.user || n.email || '').toLowerCase().trim();
+          return owner === user;
+        });
 
-      // Filter active SMS logs matching user numbers
-      const userActiveLogs = (data.active_sms_logs || []).filter((log: any) => {
-        if (!log) return false;
-        const clean = String(log.number || '').replace(/[^0-9]/g, '');
-        return Array.from(userNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
-      });
+    const userNumsSet = new Set<string>(userNumbers.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')));
 
-      const totalMessages = userActiveLogs.length;
-      const delivered = userActiveLogs.filter((l: any) => l.status === 'DELIVERED').length;
-      const failed = userActiveLogs.filter((l: any) => l.status === 'FAILED').length;
-      const rate = totalMessages > 0 ? parseFloat(((delivered / totalMessages) * 100).toFixed(1)) : 0;
+    // Filter active SMS logs matching user numbers
+    const userActiveLogs = userNumsSet.size === 0 ? [] : (data.active_sms_logs || []).filter((log: any) => {
+      if (!log) return false;
+      const clean = String(log.number || '').replace(/[^0-9]/g, '');
+      return Array.from(userNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
+    });
+
+    const totalMessages = userActiveLogs.length;
+    const delivered = userActiveLogs.filter((l: any) => l.status === 'DELIVERED').length;
+    const failed = userActiveLogs.filter((l: any) => l.status === 'FAILED').length;
+    const rate = totalMessages > 0 ? parseFloat(((delivered / totalMessages) * 100).toFixed(1)) : 0;
+    
+    const now = new Date();
+    const todayPrefix = now.toISOString().split('T')[0];
+    const todayCount = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length;
+
+    const chart_data = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (6 - i));
+      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const isoPrefix = d.toISOString().split('T')[0];
       
-      const now = new Date();
-      const todayPrefix = now.toISOString().split('T')[0];
-      const todayCount = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(todayPrefix)).length;
+      const dayLogs = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(isoPrefix));
+      return {
+        date: dateStr,
+        total: dayLogs.length,
+        delivered: dayLogs.filter((l: any) => l.status === 'DELIVERED').length,
+        failed: dayLogs.filter((l: any) => l.status === 'FAILED').length
+      };
+    });
 
-      const chart_data = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(now);
-        d.setDate(d.getDate() - (6 - i));
-        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const isoPrefix = d.toISOString().split('T')[0];
-        
-        const dayLogs = userActiveLogs.filter((l: any) => l.timestamp && l.timestamp.startsWith(isoPrefix));
-        return {
-          date: dateStr,
-          total: dayLogs.length,
-          delivered: dayLogs.filter((l: any) => l.status === 'DELIVERED').length,
-          failed: dayLogs.filter((l: any) => l.status === 'FAILED').length
-        };
-      });
-
-      return res.json({
-        last_updated: data.last_updated || new Date().toISOString(),
-        firebase_quota_exhausted: isFirebaseQuotaExhausted(),
-        metrics: {
-          messages: totalMessages,
-          delivered: delivered,
-          failed: failed,
-          todayCount: todayCount,
-          deliveryRate: rate,
-          todayDate: new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-          totalRanges: userNumbers.length
-        },
-        realtime_counters: {
-          totalMessages: totalMessages,
-          delivered: delivered,
-          failed: failed,
-          charged: delivered,
-          totalRanges: userNumbers.length
-        },
-        chart_data: chart_data,
-        active_sms_logs: userActiveLogs,
-        rented_numbers: userNumbers
-      });
-    }
-
-    res.json({
-      ...data,
-      firebase_quota_exhausted: isFirebaseQuotaExhausted()
+    return res.json({
+      last_updated: data.last_updated || new Date().toISOString(),
+      firebase_quota_exhausted: isFirebaseQuotaExhausted(),
+      metrics: {
+        messages: totalMessages,
+        delivered: delivered,
+        failed: failed,
+        todayCount: todayCount,
+        deliveryRate: rate,
+        todayDate: new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+        totalRanges: userNumbers.length
+      },
+      realtime_counters: {
+        totalMessages: totalMessages,
+        delivered: delivered,
+        failed: failed,
+        charged: delivered,
+        totalRanges: userNumbers.length
+      },
+      chart_data: chart_data,
+      active_sms_logs: userActiveLogs,
+      rented_numbers: userNumbers
     });
   });
 
@@ -1606,18 +1602,26 @@ function getCountryByPhoneNumber(phone: string): string {
       }
 
       const combinedLiveLogs = [...fetchedFoxLogs, ...fetchedBlueLogs, ...fetchedS1tLogs];
+      const data = readSyncData();
+      const rentedNumsSet = new Set((data.rented_numbers || []).map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')));
 
-      if (combinedLiveLogs.length > 0) {
+      // Filter live panel logs so only messages for active rented numbers are kept
+      const matchedLiveLogs = rentedNumsSet.size === 0 ? [] : combinedLiveLogs.filter((l: any) => {
+        const clean = String(l.number || '').replace(/[^0-9]/g, '');
+        return Array.from(rentedNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
+      });
+
+      if (matchedLiveLogs.length > 0) {
         nextAllowedPollTime = Date.now() + 4500;
-        const data = readSyncData();
         
-        // Retain only authentic FOX SMS, BLUE SMS, and S1T SMS logs
-        const existingLogs = (data.active_sms_logs || []).filter((l: any) =>
-          l.id.startsWith('MSG-FOX-') || l.id.startsWith('MSG-BLUE-') || l.id.startsWith('MSG-S1T-')
-        );
+        // Retain only authentic matching logs
+        const existingLogs = (data.active_sms_logs || []).filter((l: any) => {
+          const clean = String(l.number || '').replace(/[^0-9]/g, '');
+          return Array.from(rentedNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
+        });
 
         const existingIds = new Set(existingLogs.map((l: any) => l.id));
-        const freshUnique = combinedLiveLogs.filter((l: any) => !existingIds.has(l.id));
+        const freshUnique = matchedLiveLogs.filter((l: any) => !existingIds.has(l.id));
         const rawMergedLogs = [...freshUnique, ...existingLogs];
 
         // Normalize termination & strictly deduplicate by (number + OTP / text) so same OTP never appears repeatedly
@@ -1663,14 +1667,14 @@ function getCountryByPhoneNumber(phone: string): string {
           todayCount: todayCount,
           deliveryRate: deliveryRate,
           todayDate: now.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-          totalRanges: data.metrics?.totalRanges || 0
+          totalRanges: data.rented_numbers.length
         };
         data.realtime_counters = {
           totalMessages: todayCount,
           delivered: baseDelivered,
           failed: baseFailed,
           charged: todayCount,
-          totalRanges: data.realtime_counters?.totalRanges || 0
+          totalRanges: data.rented_numbers.length
         };
         data.active_sms_logs = mergedLogs;
         
@@ -1682,7 +1686,33 @@ function getCountryByPhoneNumber(phone: string): string {
           console.warn('[LiveSMS] Firestore write notice:', dbErr.message);
         }
         broadcastUpdate(data);
-        console.log(`[LiveSMS-Sync] Synchronized ${mergedLogs.length} messages (FOX: ${fetchedFoxLogs.length}, BLUE: ${fetchedBlueLogs.length}, S1T: ${fetchedS1tLogs.length}, +${freshUnique.length} fresh).`);
+        console.log(`[LiveSMS-Sync] Synchronized ${mergedLogs.length} messages for active rented numbers.`);
+      } else {
+        // No active rented numbers matching live logs -> metrics stay zeroed
+        data.last_updated = now.toISOString();
+        data.active_sms_logs = [];
+        data.metrics = {
+          messages: 0,
+          delivered: 0,
+          failed: 0,
+          todayCount: 0,
+          deliveryRate: 100.0,
+          todayDate: now.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+          totalRanges: (data.rented_numbers || []).length
+        };
+        data.realtime_counters = {
+          totalMessages: 0,
+          delivered: 0,
+          failed: 0,
+          charged: 0,
+          totalRanges: (data.rented_numbers || []).length
+        };
+        fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+        try {
+          await CoreStore.write(data);
+        } catch (dbErr: any) {
+          console.warn('[LiveSMS] Firestore write notice:', dbErr.message);
+        }
       }
     } catch (err: any) {
       console.warn('[LiveSMS] Direct sync notice:', err.message);

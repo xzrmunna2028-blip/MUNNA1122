@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-17T16:52:33.506Z",
+  "last_updated": "2026-09-17T17:17:00.000Z",
   "metrics": {
     "messages": 0,
     "delivered": 0,
@@ -16,8 +16,16 @@
     "charged": 0,
     "totalRanges": 0
   },
-  "chart_data": [],
+  "chart_data": [
+    { "date": "Sep 11", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 12", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 13", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 14", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 15", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 16", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 17", "total": 0, "delivered": 0, "failed": 0 }
+  ],
   "active_sms_logs": [],
   "rented_numbers": [],
-  "activity_logs": []
+  "test_numbers": []
 }

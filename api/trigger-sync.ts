@@ -102,31 +102,40 @@ export default async function handler(req: any, res: any) {
       data.rented_numbers = Array.from(numMap.values());
     }
 
-    // 4. Import and format fetched messages
-    if (fetchedMessages.length > 0) {
+    // 4. Import and format fetched messages (strictly filter to match active rented numbers only)
+    const rentedNumsSet = new Set((data.rented_numbers || []).map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')));
+
+    if (fetchedMessages.length > 0 && rentedNumsSet.size > 0) {
       const existingLogs = data.active_sms_logs || [];
       const msgMap = new Map(existingLogs.map((m: any) => [m.id, m]));
 
       fetchedMessages.forEach((item: any) => {
-        const id = String(item.id || item.message_id || `MSG-API-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
         let numStr = String(item.number || item.msisdn || '');
         if (numStr && !numStr.startsWith('+')) numStr = '+' + numStr;
+        const clean = numStr.replace(/[^0-9]/g, '');
 
-        msgMap.set(id, {
-          id,
-          number: numStr,
-          termination: String(item.range_name || item.termination || 'IPRN Gateway'),
-          sid: String(item.sid || item.sender_id || item.sender || 'AUTHMSG'),
-          status: String(item.status || 'DELIVERED').toUpperCase(),
-          text: String(item.text || item.content || ''),
-          otp: String(item.otp || ''),
-          timestamp: String(item.timestamp || item.created_at || new Date().toISOString()),
-          cost: `${parseFloat(item.cost || item.a2p_rate || 0.0100).toFixed(4)} USD`,
-          sender: String(item.sender || item.sender_id || 'IPRN-API')
-        });
+        // Only save message if the number belongs to a rented number
+        const matchesRented = Array.from(rentedNumsSet).some((un: string) => clean.includes(un) || un.includes(clean));
+        if (matchesRented) {
+          const id = String(item.id || item.message_id || `MSG-API-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
+          msgMap.set(id, {
+            id,
+            number: numStr,
+            termination: String(item.range_name || item.termination || 'IPRN Gateway'),
+            sid: String(item.sid || item.sender_id || item.sender || 'AUTHMSG'),
+            status: String(item.status || 'DELIVERED').toUpperCase(),
+            text: String(item.text || item.content || ''),
+            otp: String(item.otp || ''),
+            timestamp: String(item.timestamp || item.created_at || new Date().toISOString()),
+            cost: `${parseFloat(item.cost || item.a2p_rate || 0.0100).toFixed(4)} USD`,
+            sender: String(item.sender || item.sender_id || 'IPRN-API')
+          });
+        }
       });
 
       data.active_sms_logs = Array.from(msgMap.values());
+    } else {
+      data.active_sms_logs = [];
     }
 
     // Recompute stats and append success log
