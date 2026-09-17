@@ -49,7 +49,7 @@ import {
   pushUserWorkspaceToServer,
 } from './utils/userWorkspaceSync';
 
-import { clientDb, doc, collection, onSnapshot } from './lib/firebaseClient';
+import { clientDb, doc, collection, onSnapshot, disableNetwork, enableNetwork } from './lib/firebaseClient';
 
 import {
   emptyMetricData,
@@ -234,6 +234,15 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [isWsConnected, setIsWsConnected] = useState(false);
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState<boolean>(() => localStorage.getItem('firebase_quota_exhausted') === 'true');
+
+  useEffect(() => {
+    if (isQuotaExhausted) {
+      disableNetwork(clientDb).catch(() => {});
+    } else {
+      enableNetwork(clientDb).catch(() => {});
+    }
+  }, [isQuotaExhausted]);
 
   const fetchIprnMetrics = async (isManual = false) => {
     if (isManual) setIsSyncing(true);
@@ -244,6 +253,18 @@ export default function App() {
       if (res.ok) {
         const json = await res.json();
         setSyncedData(json);
+        
+        // Dynamically track Firebase Firestore daily quota exhaustion
+        if (json.firebase_quota_exhausted !== undefined) {
+          const eq = !!json.firebase_quota_exhausted;
+          setIsQuotaExhausted(eq);
+          if (eq) {
+            localStorage.setItem('firebase_quota_exhausted', 'true');
+          } else {
+            localStorage.removeItem('firebase_quota_exhausted');
+          }
+        }
+
         if (json.last_updated) {
           const d = new Date(json.last_updated);
           setLastSyncTime(d.toLocaleTimeString('en-US'));
@@ -299,13 +320,25 @@ export default function App() {
     setIsSyncing(true);
     try {
       const res = await fetch('/api/trigger-sync', { 
-        method: 'POST',
-        headers: { 'Accept': 'application/json' }
+         method: 'POST',
+         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
           setSyncedData(json.data);
+          
+          // Dynamically track Firebase Firestore daily quota exhaustion
+          if (json.data.firebase_quota_exhausted !== undefined) {
+            const eq = !!json.data.firebase_quota_exhausted;
+            setIsQuotaExhausted(eq);
+            if (eq) {
+              localStorage.setItem('firebase_quota_exhausted', 'true');
+            } else {
+              localStorage.removeItem('firebase_quota_exhausted');
+            }
+          }
+
           if (json.data.last_updated) {
             const d = new Date(json.data.last_updated);
             setLastSyncTime(d.toLocaleTimeString('en-US'));
@@ -349,69 +382,76 @@ export default function App() {
     // Attach real-time Firestore listeners for immediate database updates across sessions
     let unsubscribeGlobal: (() => void) | null = null;
 
-    try {
-      // Global Metrics, Active Numbers & Real-Time SMS Doc Listener
-      const globalDocRef = doc(clientDb, 'settings', 'global');
-      unsubscribeGlobal = onSnapshot(globalDocRef, (snapshot) => {
-        if (snapshot.exists()) {
-          const json = snapshot.data();
-          if (json) {
-            setSyncedData(json);
-            if (json.last_updated) {
-              const d = new Date(json.last_updated);
-              setLastSyncTime(d.toLocaleTimeString('en-US'));
-            }
-            if (isAdminUser) {
-              if (json.metrics) {
-                if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
-                if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+    if (!isQuotaExhausted) {
+      try {
+        // Global Metrics, Active Numbers & Real-Time SMS Doc Listener
+        const globalDocRef = doc(clientDb, 'settings', 'global');
+        unsubscribeGlobal = onSnapshot(globalDocRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const json = snapshot.data();
+            if (json) {
+              setSyncedData(json);
+              if (json.last_updated) {
+                const d = new Date(json.last_updated);
+                setLastSyncTime(d.toLocaleTimeString('en-US'));
               }
-              if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
-                localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
-                window.dispatchEvent(new Event('real_sms_updated'));
-              }
-              if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
-                localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
-                window.dispatchEvent(new Event('rented_numbers_updated'));
-              }
-            } else {
-              // Regular user: do not overwrite local workspace with global logs
-              const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
-              let userNums: string[] = [];
-              if (userNumRaw) {
-                try {
-                  const p = JSON.parse(userNumRaw);
-                  if (Array.isArray(p)) {
-                    userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
-                  }
-                } catch(e) {}
-              }
-              if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
-                const userMatched = json.active_sms_logs.filter((l: any) => {
-                  if (!l) return false;
-                  const clean = String(l.number || '').replace(/[^0-9]/g, '');
-                  return userNums.some(un => clean.includes(un) || un.includes(clean));
-                });
-                if (userMatched.length > 0) {
-                  localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+              if (isAdminUser) {
+                if (json.metrics) {
+                  if (json.metrics.messages) localStorage.setItem('total_messages_stat', json.metrics.messages.toString());
+                  if (json.metrics.totalRanges) localStorage.setItem('ranges_stat', json.metrics.totalRanges.toString());
+                }
+                if (json.active_sms_logs && Array.isArray(json.active_sms_logs)) {
+                  localStorage.setItem('real_sms_logs', JSON.stringify(json.active_sms_logs));
                   window.dispatchEvent(new Event('real_sms_updated'));
-                  window.dispatchEvent(new Event('user_sms_updated'));
+                }
+                if (json.rented_numbers && Array.isArray(json.rented_numbers)) {
+                  localStorage.setItem('rented_numbers', JSON.stringify(json.rented_numbers));
+                  window.dispatchEvent(new Event('rented_numbers_updated'));
+                }
+              } else {
+                // Regular user: do not overwrite local workspace with global logs
+                const userNumRaw = localStorage.getItem(`rented_numbers_${currentLoggedUser}`);
+                let userNums: string[] = [];
+                if (userNumRaw) {
+                  try {
+                    const p = JSON.parse(userNumRaw);
+                    if (Array.isArray(p)) {
+                      userNums = p.map((n: any) => String(n.number || n).trim().replace(/[^0-9]/g, '')).filter(Boolean);
+                    }
+                  } catch(e) {}
+                }
+                if (json.active_sms_logs && Array.isArray(json.active_sms_logs) && userNums.length > 0) {
+                  const userMatched = json.active_sms_logs.filter((l: any) => {
+                    if (!l) return false;
+                    const clean = String(l.number || '').replace(/[^0-9]/g, '');
+                    return userNums.some(un => clean.includes(un) || un.includes(clean));
+                  });
+                  if (userMatched.length > 0) {
+                    localStorage.setItem(`real_sms_logs_${currentLoggedUser}`, JSON.stringify(userMatched));
+                    window.dispatchEvent(new Event('real_sms_updated'));
+                    window.dispatchEvent(new Event('user_sms_updated'));
+                  }
                 }
               }
             }
           }
-        }
-      }, (error) => {
-        if (unsubscribeGlobal) {
-          try { unsubscribeGlobal(); } catch (_) {}
-          unsubscribeGlobal = null;
-        }
-        if (!error?.message?.includes('RESOURCE_EXHAUSTED')) {
-          console.warn('Real-time listener notice (falling back to REST sync):', error?.message || error);
-        }
-      });
-    } catch (e) {
-      console.warn('Firestore real-time subscription fallback:', e);
+        }, (error) => {
+          if (unsubscribeGlobal) {
+            try { unsubscribeGlobal(); } catch (_) {}
+            unsubscribeGlobal = null;
+          }
+          const isExhausted = error?.message?.includes('RESOURCE_EXHAUSTED') || error?.code === 'resource-exhausted' || error?.message?.includes('Quota');
+          if (isExhausted) {
+            setIsQuotaExhausted(true);
+            localStorage.setItem('firebase_quota_exhausted', 'true');
+            disableNetwork(clientDb).catch(() => {});
+          } else {
+            console.warn('Real-time listener notice (falling back to REST sync):', error?.message || error);
+          }
+        });
+      } catch (e) {
+        console.warn('Firestore real-time subscription fallback:', e);
+      }
     }
 
     // Establish real-time WebSocket connection to the backend server with automatic reconnection
@@ -641,7 +681,7 @@ export default function App() {
       }
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, []);
+  }, [isQuotaExhausted]);
 
   // Deep OTP Session Modal State
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);

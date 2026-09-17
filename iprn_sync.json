@@ -1,12 +1,12 @@
 {
-  "last_updated": "2026-09-16T23:55:00.000Z",
+  "last_updated": "2026-09-17T15:42:52.532Z",
   "metrics": {
     "messages": 0,
     "delivered": 0,
     "failed": 0,
     "todayCount": 0,
     "deliveryRate": 0.0,
-    "todayDate": "9/16/2026",
+    "todayDate": "9/17/2026",
     "totalRanges": 0
   },
   "realtime_counters": {
@@ -17,16 +17,15 @@
     "totalRanges": 0
   },
   "chart_data": [
-    { "date": "Sep 10", "total": 0, "delivered": 0, "failed": 0 },
     { "date": "Sep 11", "total": 0, "delivered": 0, "failed": 0 },
     { "date": "Sep 12", "total": 0, "delivered": 0, "failed": 0 },
     { "date": "Sep 13", "total": 0, "delivered": 0, "failed": 0 },
     { "date": "Sep 14", "total": 0, "delivered": 0, "failed": 0 },
     { "date": "Sep 15", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 16", "total": 0, "delivered": 0, "failed": 0 }
+    { "date": "Sep 16", "total": 0, "delivered": 0, "failed": 0 },
+    { "date": "Sep 17", "total": 0, "delivered": 0, "failed": 0 }
   ],
   "active_sms_logs": [],
   "rented_numbers": [],
-  "activity_logs": [],
-  "iprn_api_key": ""
+  "activity_logs": []
 }

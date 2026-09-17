@@ -8,6 +8,7 @@ import { CoreStore, CustomTermStore } from './api/_lib/store.js';
 import { CountryStore } from './api/_lib/countryStore.js';
 import { WorkspaceStore } from './api/_lib/workspaceStore.js';
 import { AuthStore } from './api/_lib/authStore.js';
+import { isFirebaseQuotaExhausted } from './api/_lib/firebase.js';
 import { KSI_MASTER_TERMINATIONS } from './src/data/ksiMasterRanges.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import nodemailer from 'nodemailer';
@@ -194,6 +195,7 @@ async function startServer() {
 
       return res.json({
         last_updated: data.last_updated || new Date().toISOString(),
+        firebase_quota_exhausted: isFirebaseQuotaExhausted(),
         metrics: {
           messages: totalMessages,
           delivered: delivered,
@@ -216,7 +218,10 @@ async function startServer() {
       });
     }
 
-    res.json(data);
+    res.json({
+      ...data,
+      firebase_quota_exhausted: isFirebaseQuotaExhausted()
+    });
   });
 
   // Dedicated endpoint for Client Active SMS (Global Live Feed allowed for all users to identify active numbers)
@@ -1809,7 +1814,10 @@ function getCountryByPhoneNumber(phone: string): string {
         status: 'success',
         simulated: false,
         message: 'Successfully updated metrics data from IPRN API via WebsiteDataSync.',
-        data,
+        data: {
+          ...data,
+          firebase_quota_exhausted: isFirebaseQuotaExhausted()
+        },
       });
     });
   });
