@@ -33,16 +33,14 @@ if (!firebaseConfig) {
 // 3. Fallback hardcoded static configuration to ensure 100% liveness on any serverless edge/cold-start
 if (!firebaseConfig) {
   firebaseConfig = {
-    projectId: "micro-technique-dszp9",
-    appId: "1:438422593575:web:e29e63832c531c377f6e02",
-    apiKey: "AIzaSyBqoSTfXl7ZVQrqZsdLqmQxEk2T_Ujy4WI",
-    authDomain: "micro-technique-dszp9.firebaseapp.com",
-    firestoreDatabaseId: "ai-studio-trafficanalytics-c3719589-3818-47dc-afeb-11ccf9019472",
-    storageBucket: "micro-technique-dszp9.firebasestorage.app",
-    messagingSenderId: "438422593575",
-    measurementId: "",
-    oAuthClientId: "438422593575-a0qgk7p5ut4b6o5dkp1u2eblhia1vh9m.apps.googleusercontent.com",
-    recaptchaSiteKey: ""
+    projectId: "code-flow-52eb1",
+    appId: "1:573701428732:web:c827e6bdc2a8a597d40e79",
+    apiKey: "AIzaSyCuUXjxF9pNdLuI8fEUIeat7I_exLgvDWI",
+    authDomain: "code-flow-52eb1.firebaseapp.com",
+    firestoreDatabaseId: "(default)",
+    storageBucket: "code-flow-52eb1.firebasestorage.app",
+    messagingSenderId: "573701428732",
+    measurementId: "G-STKJGZR882"
   };
 }
 
@@ -76,11 +74,16 @@ export function handleFirebaseError(error: any): void {
   if (
     errMsg.includes('RESOURCE_EXHAUSTED') ||
     errMsg.includes('resource-exhausted') ||
+    errMsg.includes('PERMISSION_DENIED') ||
+    errMsg.includes('permission-denied') ||
+    errMsg.includes('Cloud Firestore API') ||
     errMsg.includes('Quota') ||
     error?.code === 8 ||
-    error?.code === 'resource-exhausted'
+    error?.code === 7 ||
+    error?.code === 'resource-exhausted' ||
+    error?.code === 'permission-denied'
   ) {
     markFirebaseQuotaExhausted();
-    console.warn('[Firebase] Firestore daily write quota limit reached. Safely persisting via local memory & JSON engine.');
+    console.warn('[Firebase] Firestore unavailable or limit reached. Safely using local memory & REST JSON engine.');
   }
 }

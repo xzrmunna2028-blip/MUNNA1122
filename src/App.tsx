@@ -234,7 +234,10 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [isWsConnected, setIsWsConnected] = useState(false);
-  const [isQuotaExhausted, setIsQuotaExhausted] = useState<boolean>(() => localStorage.getItem('firebase_quota_exhausted') === 'true');
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('firebase_quota_exhausted') === 'true' || localStorage.getItem('firebase_uninitialized') === 'true';
+  });
 
   useEffect(() => {
     if (isQuotaExhausted) {
@@ -262,6 +265,7 @@ export default function App() {
             localStorage.setItem('firebase_quota_exhausted', 'true');
           } else {
             localStorage.removeItem('firebase_quota_exhausted');
+            localStorage.removeItem('firebase_uninitialized');
           }
         }
 
@@ -440,7 +444,13 @@ export default function App() {
             try { unsubscribeGlobal(); } catch (_) {}
             unsubscribeGlobal = null;
           }
-          const isExhausted = error?.message?.includes('RESOURCE_EXHAUSTED') || error?.code === 'resource-exhausted' || error?.message?.includes('Quota');
+          const isExhausted =
+            error?.message?.includes('RESOURCE_EXHAUSTED') ||
+            error?.code === 'resource-exhausted' ||
+            error?.message?.includes('Quota') ||
+            error?.message?.includes('PERMISSION_DENIED') ||
+            error?.code === 'permission-denied' ||
+            error?.message?.includes('Cloud Firestore API');
           if (isExhausted) {
             setIsQuotaExhausted(true);
             localStorage.setItem('firebase_quota_exhausted', 'true');
