@@ -1,12 +1,12 @@
 {
-  "last_updated": "2026-09-17T15:42:52.532Z",
+  "last_updated": "2026-09-17T09:47:00.000Z",
   "metrics": {
     "messages": 0,
     "delivered": 0,
     "failed": 0,
     "todayCount": 0,
-    "deliveryRate": 0.0,
-    "todayDate": "9/17/2026",
+    "deliveryRate": 100,
+    "todayDate": "",
     "totalRanges": 0
   },
   "realtime_counters": {
@@ -16,15 +16,7 @@
     "charged": 0,
     "totalRanges": 0
   },
-  "chart_data": [
-    { "date": "Sep 11", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 12", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 13", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 14", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 15", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 16", "total": 0, "delivered": 0, "failed": 0 },
-    { "date": "Sep 17", "total": 0, "delivered": 0, "failed": 0 }
-  ],
+  "chart_data": [],
   "active_sms_logs": [],
   "rented_numbers": [],
   "activity_logs": []
